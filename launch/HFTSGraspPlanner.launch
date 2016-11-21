@@ -1,0 +1,8 @@
+<launch>
+  <arg name="sim" default="false"/>
+  
+  <group if="$(arg sim)">
+    <node name="testPlanner" pkg="hfts_grasp_planner" type="testPlanner.py" output="screen" respawn="true"/>
+  </group>
+  
+</launch>

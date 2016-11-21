@@ -1,0 +1,9 @@
+<launch>
+  <arg name="sim" default="true"/>
+  
+  <group if="$(arg sim)">
+    <node name="testPlanner" pkg="hfts_grasp_planner" type="testPlanner.py" output="screen" respawn="true"/>
+    <rosparam command="load" file="$(find hfts_grasp_planner)/config/testParams.yaml" />
+  </group>
+  
+</launch>
