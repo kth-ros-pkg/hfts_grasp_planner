@@ -1,0 +1,15 @@
+# Request
+# A unique identifier for the object to grasp
+string object_identifier
+# (Optional) A point cloud representing the shape of the object to grasp.
+#            If not provided, the node attempts to retrieve shape information
+#            from an internal database using the object_identifier.
+sensor_msgs/PointCloud
+---
+# Result
+# Bool that indicates planning success.
+Bool planning_success
+# The grasping pose of the end-effector w.r.t the object
+geometry_msgs/Pose grasp_pose 
+# The hand configuration for grasping
+sensor_msgs/JointState hand_configuration
