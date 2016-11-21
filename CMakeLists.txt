@@ -7,7 +7,9 @@ project(hfts_grasp_planner)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
-  common_msgs
+  std_msgs
+  geometry_msgs
+  sensor_msgs
   message_generation
 )
 
@@ -67,7 +69,9 @@ add_service_files(
 ## Generate added messages and services with any dependencies listed here
 generate_messages(
   DEPENDENCIES
-  common_msgs
+  std_msgs
+  sensor_msgs
+  geometry_msgs
 )
 
 ################################################

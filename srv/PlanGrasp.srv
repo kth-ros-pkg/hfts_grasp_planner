@@ -4,11 +4,11 @@ string object_identifier
 # (Optional) A point cloud representing the shape of the object to grasp.
 #            If not provided, the node attempts to retrieve shape information
 #            from an internal database using the object_identifier.
-sensor_msgs/PointCloud
+sensor_msgs/PointCloud point_cloud
 ---
 # Result
 # Bool that indicates planning success.
-Bool planning_success
+bool planning_success
 # The grasping pose of the end-effector w.r.t the object
 geometry_msgs/Pose grasp_pose 
 # The hand configuration for grasping
