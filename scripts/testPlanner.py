@@ -3,12 +3,21 @@
 
 import rospy
 import rospkg
+from HFTSPlanner.utils import *
 
 if __name__ == "__main__":
     
     rospy.init_node('testPlanner')
     rospack = rospkg.RosPack()
     packPath = rospack.get_path('hfts_grasp_planner')
-    dataPath = packPath + rospy.get_param('/testObj.py')
+    objFile = rospy.get_param('/testObj')
     
-    rospy.spin()
+    objectIO = objectFileIO(packPath + '/data', objFile)
+    objPoints = objectIO.getPoints()
+        
+    objPointCloud = createPointCloud(objPoints)
+    pointcloud_publisher = rospy.Publisher("/testPointCloud", PointCloud, queue_size=1)
+    
+    while not rospy.is_shutdown():
+        pointcloud_publisher.publish(objPointCloud)
+        rospy.sleep(0.1)
