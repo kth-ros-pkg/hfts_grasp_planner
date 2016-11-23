@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   geometry_msgs
+  trajectory_msgs
   sensor_msgs
   message_generation
 )
@@ -57,6 +58,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_service_files(
   FILES
   PlanGrasp.srv
+  PlanGraspMotion.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -71,6 +73,7 @@ generate_messages(
   DEPENDENCIES
   std_msgs
   sensor_msgs
+  trajectory_msgs
   geometry_msgs
 )
 
