@@ -1,0 +1,19 @@
+# Request
+# A unique identifier for the object to grasp.
+string object_identifier
+# (Optional) A point cloud representing the shape of the object to grasp.
+#            If not provided, the node attempts to retrieve shape information
+#            from an internal database using the object_identifier.
+sensor_msgs/PointCloud point_cloud
+# (Optional) The start configuration of the arm and the hand.
+#            If not provided, the current configuration is used as start configuration.
+sensor_msgs/JointState start_configuration
+# (Optional) The pose of the object.
+#            If not provided, the object_identifier is used to retrieve a pose from TF.
+geometry_msgs/PoseStamped object_pose
+---
+# Result
+# Bool that indicates planning success.
+bool planning_success
+# A hand-arm trajectory that moves the end-effector into a grasping configuration.
+trajectory_msgs/JointTrajectory trajectory
