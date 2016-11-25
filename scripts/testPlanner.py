@@ -14,10 +14,14 @@ if __name__ == "__main__":
     
     objectIO = objectFileIO(packPath + '/data', objFile)
     objPoints = objectIO.getPoints()
-        
-    objPointCloud = createPointCloud(objPoints)
-    pointcloud_publisher = rospy.Publisher("/testPointCloud", PointCloud, queue_size=1)
+    HFTS, HFTSParam = objectIO.getHFTS()
     
-    while not rospy.is_shutdown():
-        pointcloud_publisher.publish(objPointCloud)
-        rospy.sleep(0.1)
+    objectIO.showHFTS(1)
+    # while not rospy.is_shutdown():
+    #     rospy.sleep(1)
+    # objPointCloud = createPointCloud(objPoints)
+    # pointcloud_publisher = rospy.Publisher("/testPointCloud", PointCloud, queue_size=1)
+    # 
+    # while not rospy.is_shutdown():
+    #     pointcloud_publisher.publish(objPointCloud)
+    #     rospy.sleep(0.1)
