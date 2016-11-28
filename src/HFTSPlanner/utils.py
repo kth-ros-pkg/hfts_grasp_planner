@@ -11,29 +11,55 @@ import math, copy, os, itertools
 
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
-
+from sklearn.neighbors import KDTree
 
 class objectFileIO:
 
-    def __init__(self, dataPath, objectIdentifier):
+    def __init__(self, dataPath, objectIdentifier, varFilter = True):
         self._objId = objectIdentifier
         self._dataPath = dataPath
         self._HFTSFile = self._dataPath + '/' + self._objId + '/' + self._objId + '_hfts.npy'
         self._HFTSParamFile = self._dataPath + '/' + self._objId + '/' + self._objId + '_hftsParam.npy'
         self._HFTS = None
         self._HFTSParam = None
+        self._varFilter = varFilter
         
+        
+    def filterPoints(self, points):
+        
+        rospy.loginfo('Filtering points for constructing HFTS')
+        kdt = KDTree(points[:, :3], leaf_size = 6, metric = 'euclidean')
+        
+        vldIdx = np.ones(points.shape[0], dtype=bool)
+        i = 0
+        for p in points:
+            nbIdx = kdt.query([p[:3]], k=20, return_distance=False)[0]
+            nbPointsNormals = points[nbIdx, 3:]
+            var = np.var(nbPointsNormals, axis = 0)
+            if max(var) > 0.2:
+                vldIdx[i] = False
+            i += 1
+            
+        points = points[vldIdx, :]
+        return points
+        
+    
+    
     def getPoints(self):
         objFile = self._dataPath + '/' + self._objId + '/' + self._objId
         
         try:
             points = readPlyFile(objFile + '.ply')
+            if self._varFilter:
+                points = self.filterPoints(points)
             return points
         except:
             rospy.loginfo('[objectFileIO] No \".ply\" file found for the object: ' + self._objId)
         
         try:
             points = readStlFile(objFile + '.stl')
+            if self._varFilter:
+                points = self.filterPoints(points)
             return points
         except:
             rospy.loginfo('[objectFileIO] No \".stl\" file found for the object: ' + self._objId)
@@ -78,9 +104,9 @@ class objectFileIO:
         
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
-        points = self._HFTS[:, :3] * 0.8
+        points = self._HFTS[:, :3] * 0.99
 
-        ax.scatter(points[:, 0], points[:, 1], points[:, 2], c='white', s = 200)
+        # ax.scatter(points[:, 0], points[:, 1], points[:, 2], c='white', s = 200)
 
         for label in labels:
             idx = np.where((HFTSLabels == label).all(axis=1))[0]
@@ -101,8 +127,8 @@ class HFTSGenerator:
         self._pointN = points.shape[0]
         self._points = np.c_[np.arange(self._pointN), points]
         self._posWeight = 20
-        self._branchFactor = 4
-        self._firstLevelFactor = 5
+        self._branchFactor = 2
+        self._firstLevelFactor = 4
         self._levelN = None
         self._HFTS = None
         self._HFTSParam = None
@@ -114,9 +140,10 @@ class HFTSGenerator:
         self._branchFactor = b
     
     def _calLevels(self):
-        self._levelN = int(math.log(self._pointN / self._firstLevelFactor, self._branchFactor))
+        self._levelN = int(math.log(self._pointN / self._firstLevelFactor, self._branchFactor)) - 2
         
     
+
     def _getPartitionLabels(self, points, branchFactor):
 
         estimator = KMeans(n_clusters = branchFactor)
@@ -154,6 +181,7 @@ class HFTSGenerator:
     def run(self):
         if self._HFTS is not None:
             return
+            
         rospy.loginfo('Generating HFTS')
         
         if self._levelN is None:
@@ -171,7 +199,7 @@ class HFTSGenerator:
             else:
                 self._HFTSParam[i] = self._branchFactor
         
-        
+    
         
         
             
