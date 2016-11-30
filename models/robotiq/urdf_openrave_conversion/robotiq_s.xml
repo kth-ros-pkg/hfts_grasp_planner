@@ -1,0 +1,177 @@
+<Robot name="Robotiq-S-Hand">
+    <KinBody>
+        <Body name="palm" type="dynamic">
+            <Translation> 0 0 0</Translation>
+            <quat>0 0 0 1</quat>
+            <Geom type="trimesh">
+                <render>meshes/visual/palm.dae</render>
+                <!-- <collision>meshes/collision/palm.dae</collision> -->
+                <quat>1.0 0.0 0.0 0.0</quat>
+                <Translation>0.0 0.0 0.0</Translation>
+            </Geom>
+        </Body>
+        <Body name="finger_1_link_0" type="dynamic">
+            <offsetfrom>palm</offsetfrom>
+            <Translation>-0.0455 0.0214 0.036</Translation>
+            <quat>0.0 0.70711 0.70711 0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_0.dae</Render>
+                <!-- <collision>meshes/collision/link_0.dae</collision> -->
+                <quat>1.0 0.0 0.0 0.0</quat>
+                <Translation>0.02 0.0 0.0</Translation>
+            </Geom>
+        </Body>
+        <Body name="finger_1_link_1" type="dynamic">
+            <offsetfrom>finger_1_link_0</offsetfrom>
+            <Translation>0.02 0.0 0.0</Translation>
+            <quat>1.0 0.0 0.0 0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_1.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.05 -0.028 0.0</Translation>
+                <quat>0.96639 0.00000 0.00000 -0.25708</quat>
+            </Geom>
+        </Body>
+        <Body name="finger_1_link_2" type="dynamic">
+            <offsetfrom>finger_1_link_1</offsetfrom>
+            <Translation>0.05 -0.028 0.0</Translation>
+            <quat>0.96639 0.00000 0.00000 -0.25708</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_2.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.039 0.0 0.0075</Translation>
+                <quat>1.0 0.0 0.0 0.0</quat>
+            </Geom>
+        </Body>
+        <Body name="finger_1_link_3" type="dynamic">
+            <offsetfrom>finger_1_link_2</offsetfrom>
+            <Translation>0.039 0.0 0.0</Translation>
+            <quat>1.0 0.00000 0.00000 0.0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_3.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.0 0.0 0.0</Translation>
+                <quat>0.96639 0.00000 0.00000 0.25708</quat>
+            </Geom>
+        </Body>
+<!-- ==================== FINGER 2 ==================== -->
+        <Body name="finger_2_link_0" type="dynamic">
+            <offsetfrom>palm</offsetfrom>
+            <Translation>-0.0455 0.0214 -0.036</Translation>
+            <quat>0.0 0.70711 0.70711 0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_0.dae</Render>
+                <!-- <collision>meshes/collision/link_0.dae</collision> -->
+                <quat>1.0 0.0 0.0 0.0</quat>
+                <Translation>0.02 0.0 0.0</Translation>
+            </Geom>
+        </Body>
+        <Body name="finger_2_link_1" type="dynamic">
+            <offsetfrom>finger_2_link_0</offsetfrom>
+            <Translation>0.02 0.0 0.0</Translation>
+            <quat>1.0 0.0 0.0 0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_1.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.05 -0.028 0.0</Translation>
+                <quat>0.96639 0.00000 0.00000 -0.25708</quat>
+            </Geom>
+        </Body>
+        <Body name="finger_2_link_2" type="dynamic">
+            <offsetfrom>finger_2_link_1</offsetfrom>
+            <Translation>0.05 -0.028 0.0</Translation>
+            <quat>0.96639 0.00000 0.00000 -0.25708</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_2.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.039 0.0 0.0075</Translation>
+                <quat>1.0 0.0 0.0 0.0</quat>
+            </Geom>
+        </Body>
+        <Body name="finger_2_link_3" type="dynamic">
+            <offsetfrom>finger_2_link_2</offsetfrom>
+            <Translation>0.039 0.0 0.0</Translation>
+            <quat>1.0 0.00000 0.00000 0.0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_3.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.0 0.0 0.0</Translation>
+                <quat>0.96639 0.00000 0.00000 0.25708</quat>
+            </Geom>
+        </Body>
+        <!-- ==================== FINGER 3 (middle) ==================== -->
+        <Body name="finger_middle_link_0" type="dynamic">
+            <offsetfrom>palm</offsetfrom>
+            <Translation>0.0455 0.0214 0.0</Translation>
+            <quat>0.70711 0.00000 0.00000 0.70711</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_0.dae</Render>
+                <!-- <collision>meshes/collision/link_0.dae</collision> -->
+                <quat>1.0 0.0 0.0 0.0</quat>
+                <Translation>0.02 0.0 0.0</Translation>
+            </Geom>
+        </Body>
+        <Body name="finger_middle_link_1" type="dynamic">
+            <offsetfrom>finger_middle_link_0</offsetfrom>
+            <Translation>0.02 0.0 0.0</Translation>
+            <quat>1.0 0.0 0.0 0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_1.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.05 -0.028 0.0</Translation>
+                <quat>0.96639 0.00000 0.00000 -0.25708</quat>
+            </Geom>
+        </Body>
+        <Body name="finger_middle_link_2" type="dynamic">
+            <offsetfrom>finger_middle_link_1</offsetfrom>
+            <Translation>0.05 -0.028 0.0</Translation>
+            <quat>0.96639 0.00000 0.00000 -0.25708</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_2.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.039 0.0 0.0075</Translation>
+                <quat>1.0 0.0 0.0 0.0</quat>
+            </Geom>
+        </Body>
+        <Body name="finger_middle_link_3" type="dynamic">
+            <offsetfrom>finger_middle_link_2</offsetfrom>
+            <Translation>0.039 0.0 0.0</Translation>
+            <quat>1.0 0.00000 0.00000 0.0</quat>
+            <Geom type="trimesh">
+                <Render>meshes/visual/link_3.dae</Render>
+                <!-- <collision>meshes/collision/link_1.dae</collision> -->
+                <Translation>0.0 0.0 0.0</Translation>
+                <quat>0.96639 0.00000 0.00000 0.25708</quat>
+            </Geom>
+        </Body>
+        <!-- ==================== JOINTS ==================== -->
+         <Joint name="palm_finger_1_joint" type="hinge">
+            <Body>palm</Body>
+            <Body>finger_1_link_0</Body>
+            <offsetfrom>palm</offsetfrom>
+            <axis>0 1 0</axis>
+            <limits>-0.1784 0.192</limits>
+        </Joint>
+        <Joint name="finger_1_joint_1" type="hinge">
+            <Body>finger_1_link_0</Body>
+            <Body>finger_1_link_1</Body>
+            <offsetfrom>finger_1_link_0</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>0.0495 1.2218</limits>
+        </Joint>
+        <Joint name="palm_finger_2_joint" type="hinge">
+            <Body>palm</Body>
+            <Body>finger_2_link_0</Body>
+            <offsetfrom>palm</offsetfrom>
+            <axis>0 1 0</axis>
+            <limits>-0.192 0.1784</limits>
+        </Joint>
+        <!-- <Joint name="palm_finger_middle_joint" type="hinge"> -->
+        <!--     <Body>palm</Body> -->
+        <!--     <Body>finger_middle_joint</Body> -->
+        <!--     <offsetfrom>palm</offsetfrom> -->
+        <!--     <axis>0 0 1</axis> -->
+        <!--     <limits>&#45;0.192 0.1784</limits> -->
+        <!-- </Joint> -->
+</KinBody>
+</Robot>
