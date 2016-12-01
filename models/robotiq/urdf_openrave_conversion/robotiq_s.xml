@@ -145,10 +145,10 @@
             </Geom>
         </Body>
         <!-- ==================== JOINTS ==================== -->
-         <Joint name="palm_finger_1_joint" type="hinge">
+        <Joint name="palm_finger_1_joint" type="hinge">
             <Body>palm</Body>
             <Body>finger_1_link_0</Body>
-            <offsetfrom>palm</offsetfrom>
+            <offsetfrom>finger_1_link_0</offsetfrom>
             <axis>0 1 0</axis>
             <limits>-0.1784 0.192</limits>
         </Joint>
@@ -159,19 +159,77 @@
             <axis>0 0 1</axis>
             <limits>0.0495 1.2218</limits>
         </Joint>
-        <Joint name="palm_finger_2_joint" type="hinge">
+        <Joint name="finger_1_joint_2" type="hinge">
+            <Body>finger_1_link_1</Body>
+            <Body>finger_1_link_2</Body>
+            <offsetfrom>finger_1_link_2</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>0.0 1.5708</limits>
+        </Joint>
+        <Joint name="finger_1_joint_3" type="hinge">
+            <Body>finger_1_link_2</Body>
+            <Body>finger_1_link_3</Body>
+            <offsetfrom>finger_1_link_3</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>-1.2217 -0.0523</limits>
+        </Joint>
+        <!-- =============== Finger 2 Joints ================= -->
+        <Joint name="palm_finger_2_joint" type="hinge" enable="false" mimic_pos="-palm_finger_1_joint" mimic_vel="-|palm_finger_1_joint">
             <Body>palm</Body>
             <Body>finger_2_link_0</Body>
-            <offsetfrom>palm</offsetfrom>
+            <offsetfrom>finger_2_link_0</offsetfrom>
             <axis>0 1 0</axis>
             <limits>-0.192 0.1784</limits>
         </Joint>
-        <!-- <Joint name="palm_finger_middle_joint" type="hinge"> -->
-        <!--     <Body>palm</Body> -->
-        <!--     <Body>finger_middle_joint</Body> -->
-        <!--     <offsetfrom>palm</offsetfrom> -->
-        <!--     <axis>0 0 1</axis> -->
-        <!--     <limits>&#45;0.192 0.1784</limits> -->
-        <!-- </Joint> -->
+        <Joint name="finger_2_joint_1" type="hinge" enable="false" mimic_pos="finger_1_joint_1" mimic_vel="|finger_1_joint_1">
+            <Body>finger_2_link_0</Body>
+            <Body>finger_2_link_1</Body>
+            <offsetfrom>finger_2_link_0</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>0.0495 1.2218</limits>
+        </Joint>
+        <Joint name="finger_2_joint_2" type="hinge">
+            <Body>finger_2_link_1</Body>
+            <Body>finger_2_link_2</Body>
+            <offsetfrom>finger_2_link_2</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>0.0 1.5708</limits>
+        </Joint>
+        <Joint name="finger_2_joint_3" type="hinge">
+            <Body>finger_2_link_2</Body>
+            <Body>finger_2_link_3</Body>
+            <offsetfrom>finger_2_link_3</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>-1.2217 -0.0523</limits>
+        </Joint>
+        <!-- ================== Finger middle Joints ================= -->
+        <Joint name="palm_finger_middle_joint" type="hinge" enable="False">
+            <Body>palm</Body>
+            <Body>finger_middle_link_0</Body>
+            <offsetfrom>finger_middle_link_0</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>-0.192 0.1784</limits>
+        </Joint>
+        <Joint name="finger_middle_joint_1" type="hinge" enable="false" mimic_pos="finger_1_joint_1" mimic_vel="|finger_1_joint_1">
+            <Body>finger_middle_link_0</Body>
+            <Body>finger_middle_link_1</Body>
+            <offsetfrom>finger_middle_link_0</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>0.0495 1.2218</limits>
+        </Joint>
+        <Joint name="finger_middle_joint_2" type="hinge">
+            <Body>finger_middle_link_1</Body>
+            <Body>finger_middle_link_2</Body>
+            <offsetfrom>finger_middle_link_2</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>0.0 1.5708</limits>
+        </Joint>
+        <Joint name="finger_middle_joint_3" type="hinge">
+            <Body>finger_middle_link_2</Body>
+            <Body>finger_middle_link_3</Body>
+            <offsetfrom>finger_middle_link_3</offsetfrom>
+            <axis>0 0 1</axis>
+            <limits>-1.2217 -0.0523</limits>
+        </Joint>
 </KinBody>
 </Robot>
