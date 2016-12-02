@@ -1,0 +1,5 @@
+This folder contains a OpenRAVE model for the Robotiq 3 Finger hand.
+The meshes are from the ros-industrial robotiq package [1].
+The OpenRAVE model is based on the urdf hand model from the same repository.
+
+[1] https://github.com/ros-industrial/robotiq/tree/indigo-devel
