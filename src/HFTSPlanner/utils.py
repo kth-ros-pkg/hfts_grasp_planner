@@ -27,8 +27,8 @@ class objectFileIO:
         
     def filterPoints(self, points):
         
-        rospy.loginfo('Filtering points for constructing HFTS')
         kdt = KDTree(points[:, :3], leaf_size = 6, metric = 'euclidean')
+        rospy.loginfo('Filtering points for constructing HFTS')
         
         vldIdx = np.ones(points.shape[0], dtype=bool)
         i = 0
@@ -67,20 +67,22 @@ class objectFileIO:
         rospy.logwarn('No previous file found in the database, will proceed with raw point cloud instead.')
         return None
     
-    def getHFTS(self):
+    def getHFTS(self, forceNew = False):
         
         if self._HFTS is None or self._HFTSParam is None:
 
-            if os.path.isfile(self._HFTSFile):
+            if os.path.isfile(self._HFTSFile) and not forceNew:
                 self._HFTS = np.load(self._HFTSFile)
                 self._HFTSParam = np.load(self._HFTSParamFile)
          
             else:
-                rospy.logwarn('HFTS is not available in the database')
+                if not forceNew:
+                    rospy.logwarn('HFTS is not available in the database')
                 points = self.getPoints()
                 HFTSGen = HFTSGenerator(points)
                 HFTSGen.run()
                 self._HFTS = HFTSGen.getHFTS()
+        
                 self._HFTSParam = HFTSGen.getHFTSParam()
                 HFTSGen.saveHFTS(HFTSFile = self._HFTSFile, HFTSParamFile = self._HFTSParamFile)
 
@@ -104,9 +106,6 @@ class objectFileIO:
         
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
-        points = self._HFTS[:, :3] * 0.99
-
-        # ax.scatter(points[:, 0], points[:, 1], points[:, 2], c='white', s = 200)
 
         for label in labels:
             idx = np.where((HFTSLabels == label).all(axis=1))[0]
@@ -128,7 +127,7 @@ class HFTSGenerator:
         self._points = np.c_[np.arange(self._pointN), points]
         self._posWeight = 20
         self._branchFactor = 2
-        self._firstLevelFactor = 4
+        self._firstLevelFactor = 2
         self._levelN = None
         self._HFTS = None
         self._HFTSParam = None
@@ -140,11 +139,17 @@ class HFTSGenerator:
         self._branchFactor = b
     
     def _calLevels(self):
-        self._levelN = int(math.log(self._pointN / self._firstLevelFactor, self._branchFactor)) - 2
-        
-    
+        self._levelN = int(math.log(self._pointN / self._firstLevelFactor, self._branchFactor)) - 1
+
 
     def _getPartitionLabels(self, points, branchFactor):
+        
+        points = copy.deepcopy(points)
+        
+        if points.shape[0] < branchFactor:
+            self._stop = True
+            rospy.loginfo('HFTS generation finished')
+            return None
 
         estimator = KMeans(n_clusters = branchFactor)
         points[:, :3] *= self._posWeight
@@ -155,8 +160,9 @@ class HFTSGenerator:
     
     def _computeHFTS(self, currPoints, level = 0):
 
-        if level == self._levelN:
+        if level >= self._levelN:
             return
+        
         
         idx = currPoints[:, 0].astype(int)
         
@@ -167,9 +173,12 @@ class HFTSGenerator:
         
         points6D = currPoints[:, 1:]
         currLabels = self._getPartitionLabels(points6D, bFactor)
-
-        self._HFTS[idx, level] = currLabels
         
+        if currLabels is None:
+            self._levelN = level - 1
+            return
+        
+        self._HFTS[idx, level] = currLabels
         
         for label in range(bFactor):
             
@@ -191,6 +200,7 @@ class HFTSGenerator:
         
         self._computeHFTS(self._points)
         
+        self._HFTS = self._HFTS[:, :self._levelN]
         self._HFTSParam = np.empty(self._levelN)
         
         for i in range(self._levelN):

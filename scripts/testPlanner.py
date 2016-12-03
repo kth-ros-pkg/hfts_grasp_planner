@@ -13,11 +13,11 @@ if __name__ == "__main__":
     objFile = rospy.get_param('/testObj')
     
     objectIO = objectFileIO(packPath + '/data', objFile)
-    objPoints = objectIO.getPoints()
-    HFTS, HFTSParam = objectIO.getHFTS()
+    # objPoints = objectIO.getPoints()
+    HFTS, HFTSParam = objectIO.getHFTS(forceNew = True)
     print HFTSParam
-    
-    objectIO.showHFTS(4)
+
+    # objectIO.showHFTS(len(HFTSParam)-1)
     # while not rospy.is_shutdown():
     #     rospy.sleep(1)
     # objPointCloud = createPointCloud(objPoints)
