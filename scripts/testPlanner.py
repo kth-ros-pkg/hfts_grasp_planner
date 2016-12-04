@@ -4,6 +4,7 @@
 import rospy
 import rospkg
 from HFTSPlanner.utils import *
+from HFTSPlanner.core import graspSampler
 
 if __name__ == "__main__":
     
@@ -12,10 +13,9 @@ if __name__ == "__main__":
     packPath = rospack.get_path('hfts_grasp_planner')
     objFile = rospy.get_param('/testObj')
     
-    objectIO = objectFileIO(packPath + '/data', objFile)
+    # objectIO = objectFileIO(packPath + '/data', objFile)
     # objPoints = objectIO.getPoints()
-    HFTS, HFTSParam = objectIO.getHFTS(forceNew = True)
-    print HFTSParam
+    # HFTS, HFTSParam = objectIO.getHFTS(forceNew = True)
 
     # objectIO.showHFTS(len(HFTSParam)-1)
     # while not rospy.is_shutdown():
@@ -26,3 +26,18 @@ if __name__ == "__main__":
     # while not rospy.is_shutdown():
     #     pointcloud_publisher.publish(objPointCloud)
     #     rospy.sleep(0.1)
+    
+    planer = graspSampler()
+    
+    handFile = packPath + rospy.get_param('/handFile')
+    
+    planer.loadHand(handFile)
+    
+    while not rospy.is_shutdown():
+        planer._robot.plotFingertipContacts()
+        grasp = planer._robot.getTipPN()
+        print planer._handMani.encodeGrasp(grasp)
+        rospy.sleep(0.1)
+    
+    
+    rospy.spin()

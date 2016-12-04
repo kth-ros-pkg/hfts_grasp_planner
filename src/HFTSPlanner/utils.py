@@ -36,7 +36,7 @@ class objectFileIO:
             nbIdx = kdt.query([p[:3]], k=20, return_distance=False)[0]
             nbPointsNormals = points[nbIdx, 3:]
             var = np.var(nbPointsNormals, axis = 0)
-            if max(var) > 0.2:
+            if max(var) > 0.9:
                 vldIdx[i] = False
             i += 1
             
@@ -74,7 +74,6 @@ class objectFileIO:
             if os.path.isfile(self._HFTSFile) and not forceNew:
                 self._HFTS = np.load(self._HFTSFile)
                 self._HFTSParam = np.load(self._HFTSParamFile)
-         
             else:
                 if not forceNew:
                     rospy.logwarn('HFTS is not available in the database')
@@ -145,6 +144,7 @@ class HFTSGenerator:
     def _getPartitionLabels(self, points, branchFactor):
         
         points = copy.deepcopy(points)
+        
         
         if points.shape[0] < branchFactor:
             self._stop = True
@@ -233,6 +233,7 @@ class HFTSGenerator:
 
 
 
+
 def readPlyFile(fileID):
     plydata = PlyData.read(fileID)
     vertex = plydata['vertex']
@@ -253,7 +254,14 @@ def createPointCloud(points):
     
     return pointCloud
     
-    
 
-    
+def vecAngelDiff(v0, v1):
+    # in radians
+    assert len(v0) == len(v1)
+    l0 = math.sqrt(np.inner(v0, v0))
+    l1 = math.sqrt(np.inner(v1, v1))
+    x = np.dot(v0, v1) / (l0*l1)
+    x = min(1.0, max(-1.0, x)) # fixing math precision error
+    angel = math.acos(x)
+    return angel
     
