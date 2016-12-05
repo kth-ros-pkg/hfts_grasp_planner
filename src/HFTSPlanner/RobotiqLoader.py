@@ -83,6 +83,8 @@ class RobotiqHand:
             
 
 
+    def getContactNumber(self):
+        return 3
 
     
 class RobotiqHandVirtualMainfold:
@@ -98,7 +100,7 @@ class RobotiqHandVirtualMainfold:
 
 
     def predictHandConf(self, q):
-        # Simple linear interpolation, not accurate yet, to be fixed.
+
         range0 = np.array([0.0255, 0.122])
         range1 = np.array([0, 0.165])
         lower, upper = self._orHand.GetDOFLimits()
@@ -132,6 +134,22 @@ class RobotiqHandVirtualMainfold:
             raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
         
         return self.getPredRes(q, [range0, range1]), [joint0, joint1]
+    
+    def computeGraspQuality(self, objCOM, grasp):
+        # need to be tested
+        contacts = grasp[:, :3]
+        centerShift = contacts - objCOM
+        d = np.linalg.norm(centerShift)
+        
+        v01 = grasp[0, :3] - grasp[1, :3]
+        c01 = (grasp[0, :3] + grasp[1, :3]) / 2.
+        v2c = grasp[2, :3] - c01
+        
+        d01 = np.linalg.norm(v01)
+        d2c = np.linalg.norm(v2c)
+        
+        return (d01 + d2c) - d * 2
+        
     
     def getPredRes(self, q, ranges):
         range0, range1 = ranges

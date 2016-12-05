@@ -5,7 +5,7 @@ import rospy
 import rospkg
 from HFTSPlanner.utils import *
 from HFTSPlanner.core import graspSampler
-
+from HFTSPlanner.core import HFTSNode
 if __name__ == "__main__":
     
     rospy.init_node('testPlanner')
@@ -26,27 +26,34 @@ if __name__ == "__main__":
     # while not rospy.is_shutdown():
     #     pointcloud_publisher.publish(objPointCloud)
     #     rospy.sleep(0.1)
+    # 
+    # planer = graspSampler()
+    # 
+    # handFile = packPath + rospy.get_param('/handFile')
+    # 
+    # planer.loadHand(handFile)
+    # robot = planer._robot
+    # handMani = robot.getHandMani()
+    # 
+    # while not rospy.is_shutdown():
+    #     robot.setRandomConf()
+    #     robot.plotFingertipContacts()
+    #     grasp = robot.getTipPN()
+    #     q = handMani.encodeGrasp(grasp)
+    #     raw_input('press to predict')
+    #     residual, conf = handMani.predictHandConf(q)
+    #     print residual
+    #     robot.SetDOFValues(conf)
+    #     raw_input('press for next')
+    #     
+    #     
+    #     rospy.sleep(0.1)
     
-    planer = graspSampler()
-    
+    n = HFTSNode()
+    planner = graspSampler(verbose = True)
     handFile = packPath + rospy.get_param('/handFile')
-    
-    planer.loadHand(handFile)
-    robot = planer._robot
-    handMani = robot.getHandMani()
-    
-    while not rospy.is_shutdown():
-        robot.setRandomConf()
-        robot.plotFingertipContacts()
-        grasp = robot.getTipPN()
-        q = handMani.encodeGrasp(grasp)
-        raw_input('press to predict')
-        residual, conf = handMani.predictHandConf(q)
-        print residual
-        robot.SetDOFValues(conf)
-        raw_input('press for next')
-        
-        
-        rospy.sleep(0.1)
+    planner.loadHand(handFile)
+    planner.loadObj(packPath + '/data', objFile)
+    planner.sampleGrasp(n, 4)
     
     

@@ -18,11 +18,14 @@ class objectFileIO:
     def __init__(self, dataPath, objectIdentifier, varFilter = True):
         self._objId = objectIdentifier
         self._dataPath = dataPath
-        self._HFTSFile = self._dataPath + '/' + self._objId + '/' + self._objId + '_hfts.npy'
-        self._HFTSParamFile = self._dataPath + '/' + self._objId + '/' + self._objId + '_hftsParam.npy'
+        self._HFTSFile = self._dataPath + '/' + self._objId + '/hfts.npy'
+        self._HFTSParamFile = self._dataPath + '/' + self._objId + '/hftsParam.npy'
+        self._objCOMFile = self._dataPath + '/' + self._objId + '/objCOM.npy'
         self._HFTS = None
         self._HFTSParam = None
+        self._objCOM = None
         self._varFilter = varFilter
+        self._objFileExt = ''
         
         
     def filterPoints(self, points):
@@ -36,7 +39,7 @@ class objectFileIO:
             nbIdx = kdt.query([p[:3]], k=20, return_distance=False)[0]
             nbPointsNormals = points[nbIdx, 3:]
             var = np.var(nbPointsNormals, axis = 0)
-            if max(var) > 0.9:
+            if max(var) > 0.2:
                 vldIdx[i] = False
             i += 1
             
@@ -45,13 +48,15 @@ class objectFileIO:
         
     
     
+    
     def getPoints(self):
-        objFile = self._dataPath + '/' + self._objId + '/' + self._objId
+        objFile = self._dataPath + '/' + self._objId + '/objectModel'
         
         try:
             points = readPlyFile(objFile + '.ply')
             if self._varFilter:
                 points = self.filterPoints(points)
+                self._objFileExt = '.ply'
             return points
         except:
             rospy.loginfo('[objectFileIO] No \".ply\" file found for the object: ' + self._objId)
@@ -60,6 +65,7 @@ class objectFileIO:
             points = readStlFile(objFile + '.stl')
             if self._varFilter:
                 points = self.filterPoints(points)
+                self._objFileExt = '.stl'
             return points
         except:
             rospy.loginfo('[objectFileIO] No \".stl\" file found for the object: ' + self._objId)
@@ -67,6 +73,32 @@ class objectFileIO:
         rospy.logwarn('No previous file found in the database, will proceed with raw point cloud instead.')
         return None
     
+    
+        
+    def getObjFileExtension(self):
+        if self._objFileExt is not None:
+            return self._objFileExt
+        
+        objFile = self._dataPath + '/' + self._objId + '/objectModel'
+        
+        try:
+            points = os.path.isfile(objFile + '.ply')
+            self._objFileExt = '.ply'
+
+        except:
+            rospy.loginfo('[objectFileIO] No \".ply\" file found for the object: ' + self._objId)
+
+        if self._objFileExt is None:
+            try:
+                points = os.path.isfile(objFile + '.stl')
+                self._objFileExt = '.stl'
+            except:
+                rospy.loginfo('[objectFileIO] No \".stl\" file found for the object: ' + self._objId)
+
+        return self._objFileExt
+        
+        
+        
     def getHFTS(self, forceNew = False):
         
         if self._HFTS is None or self._HFTSParam is None:
@@ -74,6 +106,7 @@ class objectFileIO:
             if os.path.isfile(self._HFTSFile) and not forceNew:
                 self._HFTS = np.load(self._HFTSFile)
                 self._HFTSParam = np.load(self._HFTSParamFile)
+                self._objCOM = np.load(self._objCOMFile)
             else:
                 if not forceNew:
                     rospy.logwarn('HFTS is not available in the database')
@@ -83,9 +116,14 @@ class objectFileIO:
                 self._HFTS = HFTSGen.getHFTS()
         
                 self._HFTSParam = HFTSGen.getHFTSParam()
-                HFTSGen.saveHFTS(HFTSFile = self._HFTSFile, HFTSParamFile = self._HFTSParamFile)
+                HFTSGen.saveHFTS(HFTSFile = self._HFTSFile, HFTSParamFile = self._HFTSParamFile, COMFile = self._objCOMFile)
 
-        return self._HFTS, self._HFTSParam
+        return self._HFTS, self._HFTSParam.astype(int)
+    
+    def getObjCOM(self):
+        if self._objCOM is None:
+            self.getHFTS
+        return self._objCOM
 
     
     def showHFTS(self, level):
@@ -123,13 +161,16 @@ class HFTSGenerator:
     # 6 dim of positions and normals + labels
     def __init__(self, points):
         self._pointN = points.shape[0]
+        self._objCOM = np.mean(points[:, :3], axis = 0)
         self._points = np.c_[np.arange(self._pointN), points]
-        self._posWeight = 20
+        self._posWeight = 200
+        
         self._branchFactor = 2
-        self._firstLevelFactor = 2
+        self._firstLevelFactor = 1
         self._levelN = None
         self._HFTS = None
         self._HFTSParam = None
+        
 
     def setPositionWeight(self, w):
         self._posWeight = w
@@ -213,12 +254,11 @@ class HFTSGenerator:
         
         
             
-    def saveHFTS(self, HFTSFile, HFTSParamFile):
+    def saveHFTS(self, HFTSFile, HFTSParamFile, COMFile):
         data = np.c_ [self._points[:, 1:], self._HFTS]
         np.save(file = HFTSFile, arr = data, allow_pickle = False)
         np.save(file = HFTSParamFile, arr = self._HFTSParam, allow_pickle = False)
-
-
+        np.save(file = COMFile, arr = self._objCOM, allow_pickle = False)
         
     def getHFTS(self):
         if self._HFTS is None:
