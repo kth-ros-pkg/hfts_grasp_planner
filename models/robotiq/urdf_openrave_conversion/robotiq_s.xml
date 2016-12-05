@@ -201,7 +201,7 @@
             <limits>-1.2217 -0.0523</limits>
         </Joint>
         <!-- =============== Finger 2 Joints ================= -->
-        <Joint name="JF20" type="hinge" enable="false"
+        <Joint name="JF20" type="hinge" enable="false">
             <Body>palm</Body>
             <Body>finger_2_link_0</Body>
             <offsetfrom>finger_2_link_0</offsetfrom>
