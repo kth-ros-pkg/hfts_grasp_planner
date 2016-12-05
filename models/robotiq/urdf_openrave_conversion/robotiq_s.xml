@@ -166,8 +166,7 @@
             <limits>-0.1784 0.192</limits>
         </Joint>
         <Joint name="JF11" type="hinge" enable="false"
-            mimic_pos="(JF2V &lt; 1.2218) * JF2V + (JF2V &gt;= 1.2218) * 1.2218"
-            mimic_vel="|JF2V (JF2V &lt; 1.2218) * 1 + (JF2V &gt;= 1.2218) * 0">
+            mimic_pos="JF21" mimic_vel="|JF21 1">
             <Body>finger_1_link_0</Body>
             <Body>finger_1_link_1</Body>
             <offsetfrom>finger_1_link_1</offsetfrom>
@@ -175,8 +174,7 @@
             <limits>0.0495 1.2218</limits>
         </Joint>
         <Joint name="JF12" type="hinge" enable="false"
-            mimic_pos="(JF2V &gt;= 1.2218) * min(1.5708, JF2V - 1.2218)"
-            mimic_vel="|JF2V (JF2V &gt;= 1.2218) * (JF2V - 1.2218 &lt; 1.5708)">
+            mimic_pos="JF22" mimic_vel="|JF22 1">
             <Body>finger_1_link_1</Body>
             <Body>finger_1_link_2</Body>
             <offsetfrom>finger_1_link_2</offsetfrom>
@@ -184,8 +182,7 @@
             <limits>0.0 1.5708</limits>
         </Joint>
         <Joint name="JF13" type="hinge" enable="false"
-            mimic_pos="min(max(-JF2V, -1.2217), -0.0523)"
-            mimic_vel="|JF2V -(JF2V &gt;= -1.2217)*(JF2V &lt;= -0.0523)">
+            mimic_pos="JF23" mimic_vel="|JF23 1">
             <Body>finger_1_link_2</Body>
             <Body>finger_1_link_3</Body>
             <offsetfrom>finger_1_link_3</offsetfrom>
@@ -209,7 +206,8 @@
             <limits>0.0495 2.7926</limits>
         </Joint>
         <Joint name="JF21" type="hinge" enable="false"
-            mimic_pos="JF11" mimic_vel="|JF11 1">
+            mimic_pos="(JF2V &lt; 1.2218) * JF2V + (JF2V &gt;= 1.2218) * 1.2218"
+            mimic_vel="|JF2V (JF2V &lt; 1.2218) * 1 + (JF2V &gt;= 1.2218) * 0">
             <Body>finger_2_link_0</Body>
             <Body>finger_2_link_1</Body>
             <offsetfrom>finger_2_link_1</offsetfrom>
@@ -217,7 +215,8 @@
             <limits>0.0495 1.2218</limits>
         </Joint>
         <Joint name="JF22" type="hinge" enable="false"
-            mimic_pos="JF12" mimic_vel="|JF12 1">
+            mimic_pos="(JF2V &gt;= 1.2218) * min(1.5708, JF2V - 1.2218)"
+            mimic_vel="|JF2V (JF2V &gt;= 1.2218) * (JF2V - 1.2218 &lt; 1.5708)">
             <Body>finger_2_link_1</Body>
             <Body>finger_2_link_2</Body>
             <offsetfrom>finger_2_link_2</offsetfrom>
@@ -225,7 +224,8 @@
             <limits>0.0 1.5708</limits>
         </Joint>
         <Joint name="JF23" type="hinge" enable="false"
-            mimic_pos="JF13" mimic_vel="|JF13 1">
+            mimic_pos="min(max(-JF2V, -1.2217), -0.0523)"
+            mimic_vel="|JF2V -(JF2V &gt;= -1.2217)*(JF2V &lt;= -0.0523)">
             <Body>finger_2_link_2</Body>
             <Body>finger_2_link_3</Body>
             <offsetfrom>finger_2_link_3</offsetfrom>
