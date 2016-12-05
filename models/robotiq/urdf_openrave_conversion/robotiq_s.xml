@@ -157,7 +157,8 @@
             </Geom>
         </Body>
         <!-- ==================== Finger 1 Joints ==================== -->
-        <Joint name="JF10" type="hinge">
+        <Joint name="JF10" type="hinge"
+            mimic_pos="-JF20" mimic_vel="-|JF20 1">
             <Body>palm</Body>
             <Body>finger_1_link_0</Body>
             <offsetfrom>finger_1_link_0</offsetfrom>
@@ -201,7 +202,6 @@
         </Joint>
         <!-- =============== Finger 2 Joints ================= -->
         <Joint name="JF20" type="hinge" enable="false"
-            mimic_pos="-JF10" mimic_vel="-|JF10 1">
             <Body>palm</Body>
             <Body>finger_2_link_0</Body>
             <offsetfrom>finger_2_link_0</offsetfrom>
