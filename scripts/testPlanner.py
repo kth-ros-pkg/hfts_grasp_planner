@@ -36,18 +36,17 @@ if __name__ == "__main__":
     handMani = robot.getHandMani()
     
     while not rospy.is_shutdown():
-        # robot.setRandomConf()
-        # robot.plotFingertipContacts()
+        robot.setRandomConf()
+        robot.plotFingertipContacts()
         grasp = robot.getTipPN()
         q = handMani.encodeGrasp(grasp)
-        # raw_input('press to predict')
-        # residual, conf = handMani.predictHandConf(q)
-        # robot.SetDOFValues(conf)
-        # raw_input('press for next')
-        print q
+        raw_input('press to predict')
+        residual, conf = handMani.predictHandConf(q)
+        print residual
+        robot.SetDOFValues(conf)
+        raw_input('press for next')
         
-        print robot.GetDOFValues()
+        
         rospy.sleep(0.1)
-        # 
     
-    rospy.spin()
+    

@@ -24,12 +24,11 @@ class RobotiqHand:
     def plotFingertipContacts(self):
         self._plotHandler = []
         colors = [np.array((1,0,0)), np.array((0,1,0)), np.array((0,0,1))]
-        tipLinkIds = [5, 9, 13]
+        tipLinkIds = ['finger_1_link_3', 'finger_2_link_3', 'finger_middle_link_3']
         pointSize = 0.005
-        links = self._orHand.GetLinks()
         
         for i in range(len(tipLinkIds)):
-            link = links[tipLinkIds[i]]
+            link = self._orHand.GetLink(tipLinkIds[i])
             T = link.GetGlobalMassFrame()
             localFrameRot = transformations.rotation_matrix(math.pi / 6., [0, 0, 1])[:3, :3]
             T[:3, :3] = T[:3, :3].dot(localFrameRot)
@@ -49,12 +48,12 @@ class RobotiqHand:
 
     def getTipTransforms(self):
 
-        tipLinkIds = [5, 9, 13]
-        links = self._orHand.GetLinks()
+        tipLinkIds = ['finger_1_link_3', 'finger_2_link_3', 'finger_middle_link_3']
         
         ret = []
+        
         for i in range(len(tipLinkIds)):
-            link = links[tipLinkIds[i]]
+            link = self._orHand.GetLink(tipLinkIds[i])
             T = link.GetGlobalMassFrame()
             localFrameRot = transformations.rotation_matrix(math.pi / 6., [0, 0, 1])[:3, :3]
             T[:3, :3] = T[:3, :3].dot(localFrameRot)
@@ -73,7 +72,7 @@ class RobotiqHand:
     
     def setRandomConf(self):
         lower, upper = self._orHand.GetDOFLimits()
-        upper[0] = 0.93124747
+        upper[1] = 0.93124747
         selfCollision = True
         while selfCollision:
             ret = []
@@ -100,11 +99,10 @@ class RobotiqHandVirtualMainfold:
 
     def predictHandConf(self, q):
         # Simple linear interpolation, not accurate yet, to be fixed.
-        rospy.logerr(q)
-        range0 = np.array([0.026, 0.122])
+        range0 = np.array([0.0255, 0.122])
         range1 = np.array([0, 0.165])
         lower, upper = self._orHand.GetDOFLimits()
-        upper[0] = 0.93124747
+        upper[1] = 0.93124747
         
         
         posResidual0 = self.distInRange(q[0], range0)
@@ -116,26 +114,20 @@ class RobotiqHandVirtualMainfold:
         res1 = (upper[1] - lower[1]) / (range1[1] - range1[0])
         
         if posResidual0 == 0:
-            rospy.logwarn('posResidual0 is in range')
             joint0 = lower[0] + (range0[1] - q[0]) * res0
         elif posResidual0 > 0 and q[0] < range0[0]:
-            rospy.logwarn('posResidual0 not in range')
-            joint0 = lower[0]
-        elif posResidual0 > 0 and q[0] > range0[1]:
-            rospy.logwarn('posResidual0 not in range')
             joint0 = upper[0]
+        elif posResidual0 > 0 and q[0] > range0[1]:
+            joint0 = lower[0]
         else:
             raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
 
         if posResidual1 == 0:
-            rospy.logwarn('posResidual1 is in range')
-            joint1 = lower[1] + (range1[0] + q[1]) * res1
+            joint1 = lower[1] + (range1[1] - q[1]) * res1
         elif posResidual1 > 0 and q[1] < range1[0]:
-            rospy.logwarn('posResidual1 not in range')
-            joint1 = lower[1]
-        elif posResidual1 > 0 and q[1] > range1[1]:
-            rospy.logwarn('posResidual1 not in range')
             joint1 = upper[1]
+        elif posResidual1 > 0 and q[1] > range1[1]:
+            joint1 = lower[1]
         else:
             raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
         
@@ -149,7 +141,6 @@ class RobotiqHandVirtualMainfold:
         angleResidual1 = q[3]
         
         r = (posResidual0 + posResidual1) * self._alpha + (angleResidual0 + angleResidual1)
-        # rospy.logerr(str(posResidual0) + ', ' + str(posResidual1) + ', ' + str(angleResidual0) + ', ' + str(angleResidual1))
         return r
         
         
