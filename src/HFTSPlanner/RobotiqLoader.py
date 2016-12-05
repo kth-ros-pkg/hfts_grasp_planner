@@ -4,6 +4,7 @@ import numpy as np
 import transformations
 import math
 from utils import vecAngelDiff
+import rospy
 
 class RobotiqHand:
 
@@ -12,10 +13,13 @@ class RobotiqHand:
         self._orEnv = env
         self._orEnv.Load(handFile)
         self._orHand = self._orEnv.GetRobots()[0]
-        self._handMain = RobotiqHandVirtualMainfold(self._orHand)
+        self._handMani = RobotiqHandVirtualMainfold(self._orHand)
+    
+    def __getattr__(self, attr): # composition
+        return getattr(self._orHand, attr)
         
     def getHandMani(self):
-        return self._handMain
+        return self._handMani
     
     def plotFingertipContacts(self):
         self._plotHandler = []
@@ -48,7 +52,6 @@ class RobotiqHand:
         tipLinkIds = [5, 9, 13]
         links = self._orHand.GetLinks()
         
-        
         ret = []
         for i in range(len(tipLinkIds)):
             link = links[tipLinkIds[i]]
@@ -67,7 +70,20 @@ class RobotiqHand:
             ret.append(np.concatenate((t[:3, 3], t[:3, 1])))
         
         return np.asarray(ret)
+    
+    def setRandomConf(self):
+        lower, upper = self._orHand.GetDOFLimits()
+        upper[0] = 0.93124747
+        selfCollision = True
+        while selfCollision:
+            ret = []
+            for i in range(2):
+                ret.append(np.random.uniform(lower[i], upper[i]))
+            self.SetDOFValues(ret)
+            selfCollision = self._orHand.CheckSelfCollision()
             
+
+
 
     
 class RobotiqHandVirtualMainfold:
@@ -78,19 +94,65 @@ class RobotiqHandVirtualMainfold:
     def __init__(self, orHand):
 
         self._orHand = orHand
-    
+        self._alpha = 10
 
 
 
     def predictHandConf(self, q):
-        # Not accurate yet, to be fixed!!!!!!!!!!!!!!
+        # Simple linear interpolation, not accurate yet, to be fixed.
+        rospy.logerr(q)
+        range0 = np.array([0.026, 0.122])
+        range1 = np.array([0, 0.165])
+        lower, upper = self._orHand.GetDOFLimits()
+        upper[0] = 0.93124747
         
-        diff01Range = [0.026, 0.122]
-        diff2cRange = [0, 0.165]
-        dofLimits = self._orHand.GetDOFLimits()
         
-            
+        posResidual0 = self.distInRange(q[0], range0)
+        posResidual1 = self.distInRange(q[1], range1)
+        angleResidual0 = q[2]
+        angleResidual1 = q[3]
+        
+        res0 = (upper[0] - lower[0]) / (range0[1] - range0[0])
+        res1 = (upper[1] - lower[1]) / (range1[1] - range1[0])
+        
+        if posResidual0 == 0:
+            rospy.logwarn('posResidual0 is in range')
+            joint0 = lower[0] + (range0[1] - q[0]) * res0
+        elif posResidual0 > 0 and q[0] < range0[0]:
+            rospy.logwarn('posResidual0 not in range')
+            joint0 = lower[0]
+        elif posResidual0 > 0 and q[0] > range0[1]:
+            rospy.logwarn('posResidual0 not in range')
+            joint0 = upper[0]
+        else:
+            raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
+
+        if posResidual1 == 0:
+            rospy.logwarn('posResidual1 is in range')
+            joint1 = lower[1] + (range1[0] + q[1]) * res1
+        elif posResidual1 > 0 and q[1] < range1[0]:
+            rospy.logwarn('posResidual1 not in range')
+            joint1 = lower[1]
+        elif posResidual1 > 0 and q[1] > range1[1]:
+            rospy.logwarn('posResidual1 not in range')
+            joint1 = upper[1]
+        else:
+            raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
+        
+        return self.getPredRes(q, [range0, range1]), [joint0, joint1]
     
+    def getPredRes(self, q, ranges):
+        range0, range1 = ranges
+        posResidual0 = self.distInRange(q[0], range0)
+        posResidual1 = self.distInRange(q[1], range1)
+        angleResidual0 = q[2]
+        angleResidual1 = q[3]
+        
+        r = (posResidual0 + posResidual1) * self._alpha + (angleResidual0 + angleResidual1)
+        # rospy.logerr(str(posResidual0) + ', ' + str(posResidual1) + ', ' + str(angleResidual0) + ', ' + str(angleResidual1))
+        return r
+        
+        
     def distInRange(self, d, r):
         
         if d < r[0]:
@@ -110,7 +172,7 @@ class RobotiqHandVirtualMainfold:
         
         aDiff01 = vecAngelDiff(grasp[0, 3:], grasp[1, 3:])
         avgN01 = (grasp[0, 3:] + grasp[1, 3:]) / 2.
-        aDiff2A = vecAngelDiff(grasp[2, 3:], avgN01)
+        aDiff2A = vecAngelDiff(grasp[2, 3:], -avgN01)
         
         return [d01, d2c, aDiff01, aDiff2A]
 
