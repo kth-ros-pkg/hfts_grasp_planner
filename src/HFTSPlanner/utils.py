@@ -25,7 +25,7 @@ class objectFileIO:
         self._HFTSParam = None
         self._objCOM = None
         self._varFilter = varFilter
-        self._objFileExt = ''
+        self._objFileExt = None
         
         
     def filterPoints(self, points):
@@ -122,7 +122,7 @@ class objectFileIO:
     
     def getObjCOM(self):
         if self._objCOM is None:
-            self.getHFTS
+            self.getHFTS()
         return self._objCOM
 
     
@@ -166,7 +166,7 @@ class HFTSGenerator:
         self._posWeight = 200
         
         self._branchFactor = 2
-        self._firstLevelFactor = 1
+        self._firstLevelFactor = 4
         self._levelN = None
         self._HFTS = None
         self._HFTSParam = None

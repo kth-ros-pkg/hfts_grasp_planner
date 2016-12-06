@@ -54,6 +54,6 @@ if __name__ == "__main__":
     handFile = packPath + rospy.get_param('/handFile')
     planner.loadHand(handFile)
     planner.loadObj(packPath + '/data', objFile)
-    planner.sampleGrasp(n, 4)
-    
+    planner.sampleGrasp(n, 30)
+    rospy.spin()
     

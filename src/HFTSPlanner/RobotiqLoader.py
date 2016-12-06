@@ -24,7 +24,7 @@ class RobotiqHand:
     def plotFingertipContacts(self):
         self._plotHandler = []
         colors = [np.array((1,0,0)), np.array((0,1,0)), np.array((0,0,1))]
-        tipLinkIds = ['finger_1_link_3', 'finger_2_link_3', 'finger_middle_link_3']
+        tipLinkIds = self.getFingertipLinks()
         pointSize = 0.005
         
         for i in range(len(tipLinkIds)):
@@ -48,7 +48,7 @@ class RobotiqHand:
 
     def getTipTransforms(self):
 
-        tipLinkIds = ['finger_1_link_3', 'finger_2_link_3', 'finger_middle_link_3']
+        tipLinkIds = self.getFingertipLinks()
         
         ret = []
         
@@ -61,6 +61,14 @@ class RobotiqHand:
             T[0:3,3] = T[0:3,3] + offset
             ret.append(T)
         return ret
+        
+    def getFingertipLinks(self):
+        return ['finger_1_link_3', 'finger_2_link_3', 'finger_middle_link_3']
+    
+    def getNonFingertipLinks():
+        return ['palm', 'finger_1_link_0', 'finger_1_link_2', 'finger_1_link_3',
+                'finger_2_link_0', 'finger_2_link_1', 'finger_2_link_3', 'finger_2_link_v',
+                'finger_middle_link_0', 'finger_middle_link_1', 'finger_middle_link_2', 'finger_middle_link_3']
     
     def getTipPN(self):
         ret = []
@@ -70,10 +78,18 @@ class RobotiqHand:
         
         return np.asarray(ret)
     
+    def getOriTipPN(self, handConf):
+
+        self._orHand.SetTransform(np.identity(4))
+        self._orHand.SetDOFValues(handConf)
+        return self.getTipPN()
+    
     def setRandomConf(self):
+        
         lower, upper = self._orHand.GetDOFLimits()
         upper[1] = 0.93124747
         selfCollision = True
+        
         while selfCollision:
             ret = []
             for i in range(2):
@@ -85,6 +101,37 @@ class RobotiqHand:
 
     def getContactNumber(self):
         return 3
+        
+    def HandObjTransform(self, handPoints, objPoints):
+        frameHand = self.getTriFrame(handPoints)
+        frameObj = self.getTriFrame(objPoints)
+        T = transformations.identity_matrix()
+        T[0:3, 0:3] = self.getRotationMatrix(frameHand, frameObj)
+        newHandPoints = np.transpose(np.dot(T[0:3, 0:3], np.transpose(handPoints)))
+        objC = np.sum(objPoints, axis=0) / 3.
+        newHandC = np.sum(newHandPoints, axis=0) / 3.
+        
+        T[:3, -1] = np.transpose(objC - newHandC)
+        return T
+        
+    def getTriFrame(self, points):
+
+        ori = np.sum(points, axis=0) / 3.
+        x = (points[0, :] - ori) / np.linalg.norm(points[0, :] - ori)
+        e01 = points[1, :] - points[0, :]
+        e02 = points[2, :] - points[0, :]
+        e12 = points[2, :] - points[1, :]
+        if np.linalg.norm(e01) == 0.0 or np.linalg.norm(e02) == 0.0 or np.linalg.norm(e12) == 0.0:
+            raise InvalidTriangleException('Two points are indentical')
+        z = (np.cross(e02, e01)) / np.linalg.norm(np.cross(e02, e01))
+        y = np.cross(z, x)
+
+        frame = [x, y, z]
+        return np.asarray(frame)
+    
+    def getRotationMatrix(self, frame1, frame2):
+        R = np.dot(np.transpose(frame2), np.linalg.inv(np.transpose(frame1)))
+        return R
 
     
 class RobotiqHandVirtualMainfold:
@@ -137,6 +184,7 @@ class RobotiqHandVirtualMainfold:
     
     def computeGraspQuality(self, objCOM, grasp):
         # need to be tested
+        
         contacts = grasp[:, :3]
         centerShift = contacts - objCOM
         d = np.linalg.norm(centerShift)
@@ -148,7 +196,7 @@ class RobotiqHandVirtualMainfold:
         d01 = np.linalg.norm(v01)
         d2c = np.linalg.norm(v2c)
         
-        return (d01 + d2c) - d * 2
+        return 100* ((d01 + d2c) - d)
         
     
     def getPredRes(self, q, ranges):
@@ -185,6 +233,7 @@ class RobotiqHandVirtualMainfold:
         
         return [d01, d2c, aDiff01, aDiff2A]
 
+    
         
         
         

@@ -61,6 +61,7 @@ class graspSampler:
 
         objectIO = objectFileIO(dataPath, objId)
         self._dataLabeled, self._levels = objectIO.getHFTS()
+        print self._levels
         self._nLevel = len(self._levels)
         self._obj = self._orEnv.Load(dataPath + '/' + objId + '/objectModel' + objectIO.getObjFileExtension())
         self._objCOM = objectIO.getObjCOM()
@@ -124,7 +125,7 @@ class graspSampler:
             
             
         if node.getDepth() + depthLimit > self._nLevel:
-            depthLimit = self._nLevel - node.getDepth() # cap
+            depthLimit = self._nLevel - node.getDepth() - 1 # cap
 
         if node.getDepth() == 0: # at root
             contactLabel = self.initPlanner()
@@ -137,15 +138,13 @@ class graspSampler:
 
         self.clearConfigCache()
         
-        logging.debug('[GoalSampler::sampleGrasp] Sampling a grasp; %i number of iterations' %
-                      self._maxIters)
 
         while True:
             # just do it until depthLimit is reached
             for iter_now in range(self._maxIters):
                 labels_tmp = self.getSiblingLabels(currLabels=contactLabel)
                 s_tmp, r_tmp, o_tmp = self.evaluateGrasp(labels_tmp)
-                print depthLimit
+
                 if self.shcEvaluation(o_tmp, bestO):
                     contactLabel = labels_tmp
                     bestO = o_tmp
@@ -154,119 +153,33 @@ class graspSampler:
                         print 'improved at level: %d, iter: %d' % (depthLimit, iter_now)
                         print s_tmp, r_tmp, o_tmp
                         print '---------------------------------------------------'
-
-
+                    
             # extending to next level
             if depthLimit > 0:
                 bestO, contactLabel = self.extendSolution(contactLabel)
                 depthLimit -= 1
-
             else: # consider output
                 self.composeGraspInfo(contactLabel)
+                self.executeInOR(postOpt = postOpt)
+                return
 
-                try:
-                    sampleQ, stability = self.executeInOR(postOpt=postOpt)
-                except InvalidTriangleException:
-                    self._graspConf = None
-                    sampleQ = 4
-                    stability = 0.0
+    def plotClusters(self, contactLabels):
 
-                # isLeaf = len(contactLabel[0]) == self._nLevel
-                # isGoalSample = sampleQ == 0 and isLeaf
-                # if not isGoalSample and self._graspConf is not None:
-                #     logging.debug('[GraspGoalSampler::sampleGrasp] Approximate has final quality: ' +
-                #                   str(sampleQ))
-                #     self.avoidCollisionAtFingers(nStep = 20)
-                #     openHandOffset = 0.0
-                # logging.debug('[GraspSampler] We sampled a grasp on level ' + str(len(contactLabel[0])))
-                # if isGoalSample:
-                #     logging.debug('[GraspSampler] We sampled a goal grasp (might be in collision)!')
-                # if isLeaf:
-                #     logging.debug('[GraspSampler] We sampled a leaf')
+        if not self._samplerViewer:
+            return
+        self.cloudPlot = []
+        colors = [np.array((1,0,0)), np.array((0,1,0)), np.array((0,0,1))]
 
-                # depth = len(contactLabel[0])
-                # possibleNumChildren, possibleNumLeaves = self.getBranchInformation(depth)
-                # return HFTSNode(labels=contactLabel, handConf=self._graspConf,
-                #                 preGraspHandConfig=self._preGraspConf, armConf=self._armConf,
-                #                 goal=isGoalSample, leaf=isLeaf, valid=goodInLabEnv,
-                #                 possibleNumLeaves=possibleNumLeaves, possibleNumChildren=possibleNumChildren,
-                #                 quality=stability)
+        for i in range(3):
+            label = contactLabels[i]
+
+            level = len(label) - 1 # indexed from 0
+            idx = np.where((self._dataLabeled[:, 6:7 + level] == label).all(axis=1))
+            points = [self._dataLabeled[t, 0:3] for t in idx][0]
+            points = np.asarray(points)
+            self.cloudPlot.append(self._orEnv.plot3(points=points, pointsize=0.006, colors=colors[i], drawstyle=1))
 
 
-    # def getBranchInformation(self, depth):
-    #     if depth < self.getMaximumDepth():
-    #         possibleNumChildren = pow(self._levels[depth] + 1, self._contactN)
-    #         possibleNumLeaves = 1
-    #         for d in range(depth, self.getMaximumDepth()):
-    #             possibleNumLeaves *= pow(self._levels[depth] + 1, self._contactN)
-    #     else:
-    #         possibleNumChildren = 0
-    #         possibleNumLeaves = 1
-    #     return (possibleNumChildren, possibleNumLeaves)
-    # 
-    # 
-    # def avoidCollisionAtFingers(self, nStep = 4, s = 0.6):
-    #     if self._orEnv.CheckCollision(self._robot.GetLink('root')):
-    #         return None
-    #     if self._orEnv.CheckCollision(self._robot.GetLink('A1_Link')):
-    #         return None
-    #     if self._orEnv.CheckCollision(self._robot.GetLink('B1_Link')):
-    #         return None
-    #     if self._orEnv.CheckCollision(self._robot.GetLink('C1_Link')):
-    #         return None
-    #     currConf = self._robot.GetDOFValues()
-    #     openConfig = np.array([0, -math.pi/2, 0, -math.pi/2, 0, -math.pi/2, 0]) + np.array([s]*7)
-    #     openConfig[0] = currConf[0]
-    #     step = (openConfig - currConf) / nStep
-    #     A = True
-    #     B = True
-    #     C = True
-    #     for i in range(nStep):
-    #         if A:
-    #             if self._orEnv.CheckCollision(self._robot.GetLink('A2_Link')) \
-    #                or self._orEnv.CheckCollision(self._robot.GetLink('A3_Link')):
-    #                 currConf[1:3] += step[1:3]
-    #             else:
-    #                 A = False
-    #         if B:
-    #             if self._orEnv.CheckCollision(self._robot.GetLink('B2_Link')) \
-    #                or self._orEnv.CheckCollision(self._robot.GetLink('B3_Link')):
-    #                 currConf[5:] += step[5:]
-    #             else:
-    #                 B = False
-    #         if C:
-    #             if self._orEnv.CheckCollision(self._robot.GetLink('C2_Link')) \
-    #                or self._orEnv.CheckCollision(self._robot.GetLink('C3_Link')):
-    #                 currConf[3:5] += step[3:5]
-    #             else:
-    #                 C = False
-    #         self._robot.SetDOFValues(currConf)
-    #     if A or B or C:
-    #         pass
-    #     else:
-    #         self._graspConf = self._robot.GetDOFValues()
-# 
-# 
-#     def plotClusters(self, contactLabels):
-# 
-#         if not self._samplerViewer:
-#             return
-#         self.cloudPlot = []
-#         colors = [np.array((1,0,0)), np.array((1,1,0)), np.array((1,0,0))]
-# 
-#         for i in range(3):
-#             label = contactLabels[i]
-# 
-#             level = len(label) - 1 # indexed from 0
-#             idx = np.where((self._dataLabeled[:, 6:7 + level] == label).all(axis=1))
-#             points = [self._dataLabeled[t, 0:3] for t in idx][0]
-#             points = np.asarray(points)
-#             self.cloudPlot.append(self._orEnv.plot3(points=points, pointsize=0.006, colors=colors[i], drawstyle=1))
-# 
-# 
-# 
-# 
-# 
     def executeInOR(self, postOpt):
         
         self._robot.SetDOFValues(self._graspConf)
@@ -282,14 +195,14 @@ class graspSampler:
             rotParam = rot[1].tolist() + [rot[0]] + T[:3, -1].tolist()
             fmin_cobyla(self._robot.allObj, self._robot.GetDOFValues() + rotParam, allConstr, rhobeg = .1,
                         rhoend=1e-4, args=(self._graspContacts[:, :3], self._graspContacts[:, 3:], self._robot), maxfun=1e8, iprint=0)
-
-        self.complyEndEffectors()
-
-        self._graspPose = self._robot.GetTransform()
-        self._graspConf = self._robot.GetDOFValues()
-        # self.drawTipPN()
-        ret, stability = self.finalCheck()
-        return ret, stability
+        # 
+        # self.complyEndEffectors()
+        # 
+        # self._graspPose = self._robot.GetTransform()
+        # self._graspConf = self._robot.GetDOFValues()
+        # # self.drawTipPN()
+        # ret, stability = self.finalCheck()
+        # return ret, stability
         
         # if ret < 3:
         #     return ret
@@ -337,6 +250,9 @@ class graspSampler:
 #             return 1, stability
 # 
 #         return 0, stability
+
+    def checkFingertipContacts(self):
+        pass
 # 
 #     def checkContacts(self):
 #         links = self._robot.GetLinks()
@@ -479,15 +395,17 @@ class graspSampler:
 
         self._graspContacts= np.asarray(contacts)
 
+
         code_tmp = self._handMani.encodeGrasp(self._graspContacts)
         dummy, self._graspConf  = self._handMani.predictHandConf(code_tmp)
 
-        self._graspPos = self._handMani.getOriTipPN(self._graspConf)
-# 
+        
+        self._graspPos = self._robot.getOriTipPN(self._graspConf)
+#       
 # 
     def extendSolution(self, oldLabels):
         for label in oldLabels:
-            label.append(np.random.randint(self._levels[len(label)] + 1))
+            label.append(np.random.randint(self._levels[len(label)]))
         s_tmp, r_tmp, o_tmp = self.evaluateGrasp(oldLabels)
 
         return o_tmp, oldLabels
@@ -530,16 +448,16 @@ class graspSampler:
 # 
 # 
     def shcEvaluation(self, o_tmp, bestO):
-        # if bestO < o_tmp:
-        #     return True
-        # else:
-        #     return False
-
-        v = (bestO - o_tmp) / self._ita
-        if v < 0: #python overflow
+        if bestO < o_tmp:
             return True
         else:
             return False
+
+        v = (bestO - o_tmp) / self._ita
+        # if v < 0: #python overflow
+        #     return True
+        # else:
+        #     return False
 
         p = 1. / (1 + exp(v))
 
@@ -578,12 +496,12 @@ class graspSampler:
         if len(label) <= self._hops / 2:
             ret = []
             for i in range(len(label)):
-                ret.append(np.random.randint(self._levels[i] + 1))
+                ret.append(np.random.randint(self._levels[i]))
         else:
             matchLen = len(label) - self._hops / 2
             ret = label[:matchLen]
             for i in range(len(label) - matchLen):
-                ret.append(np.random.randint(self._levels[i + matchLen] + 1))
+                ret.append(np.random.randint(self._levels[i + matchLen]))
         return ret
 # 
 # 
