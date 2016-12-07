@@ -10,6 +10,6 @@ sensor_msgs/PointCloud point_cloud
 # Bool that indicates planning success.
 bool planning_success
 # The grasping pose of the end-effector w.r.t the object
-geometry_msgs/Pose grasp_pose 
+geometry_msgs/PoseStamped grasp_pose
 # The hand configuration for grasping
 sensor_msgs/JointState hand_configuration

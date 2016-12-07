@@ -51,15 +51,16 @@ class objectFileIO:
     
     def getPoints(self):
         objFile = self._dataPath + '/' + self._objId + '/objectModel'
-        
+
         try:
+            print objFile + '.ply'
             points = readPlyFile(objFile + '.ply')
             if self._varFilter:
                 points = self.filterPoints(points)
                 self._objFileExt = '.ply'
             return points
         except:
-            rospy.loginfo('[objectFileIO] No \".ply\" file found for the object: ' + self._objId)
+            rospy.loginfo('[objectFileIO] No valid \".ply\" file found for the object: ' + self._objId)
         
         try:
             points = readStlFile(objFile + '.stl')
@@ -68,7 +69,7 @@ class objectFileIO:
                 self._objFileExt = '.stl'
             return points
         except:
-            rospy.loginfo('[objectFileIO] No \".stl\" file found for the object: ' + self._objId)
+            rospy.loginfo('[objectFileIO] No valid \".stl\" file found for the object: ' + self._objId)
         
         rospy.logwarn('No previous file found in the database, will proceed with raw point cloud instead.')
         return None
@@ -122,7 +123,8 @@ class objectFileIO:
     
     def getObjCOM(self):
         if self._objCOM is None:
-            self.getHFTS()
+            points = self.getPoints()
+            return np.mean(points[:, :3], axis = 0)
         return self._objCOM
 
     
@@ -165,8 +167,8 @@ class HFTSGenerator:
         self._points = np.c_[np.arange(self._pointN), points]
         self._posWeight = 200
         
-        self._branchFactor = 2
-        self._firstLevelFactor = 4
+        self._branchFactor = 4
+        self._firstLevelFactor = 3
         self._levelN = None
         self._HFTS = None
         self._HFTSParam = None
@@ -300,6 +302,8 @@ def vecAngelDiff(v0, v1):
     assert len(v0) == len(v1)
     l0 = math.sqrt(np.inner(v0, v0))
     l1 = math.sqrt(np.inner(v1, v1))
+    if l0 == 0 or l1 == 0:
+        return 0
     x = np.dot(v0, v1) / (l0*l1)
     x = min(1.0, max(-1.0, x)) # fixing math precision error
     angel = math.acos(x)

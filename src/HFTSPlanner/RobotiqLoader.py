@@ -65,10 +65,10 @@ class RobotiqHand:
     def getFingertipLinks(self):
         return ['finger_1_link_3', 'finger_2_link_3', 'finger_middle_link_3']
     
-    def getNonFingertipLinks():
-        return ['palm', 'finger_1_link_0', 'finger_1_link_2', 'finger_1_link_3',
-                'finger_2_link_0', 'finger_2_link_1', 'finger_2_link_3', 'finger_2_link_v',
-                'finger_middle_link_0', 'finger_middle_link_1', 'finger_middle_link_2', 'finger_middle_link_3']
+    def getNonFingertipLinks(self):
+        return ['palm', 'finger_1_link_0', 'finger_1_link_2',
+                'finger_2_link_0', 'finger_2_link_1', 'finger_2_link_v',
+                'finger_middle_link_0', 'finger_middle_link_1', 'finger_middle_link_2']
     
     def getTipPN(self):
         ret = []
@@ -77,6 +77,8 @@ class RobotiqHand:
             ret.append(np.concatenate((t[:3, 3], t[:3, 1])))
         
         return np.asarray(ret)
+    
+    
     
     def getOriTipPN(self, handConf):
 
@@ -196,7 +198,7 @@ class RobotiqHandVirtualMainfold:
         d01 = np.linalg.norm(v01)
         d2c = np.linalg.norm(v2c)
         
-        return 100* ((d01 + d2c) - d)
+        return 100* ((d01 + d2c) - 0.1 * d)
         
     
     def getPredRes(self, q, ranges):

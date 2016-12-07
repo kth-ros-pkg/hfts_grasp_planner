@@ -6,6 +6,8 @@ import rospkg
 from HFTSPlanner.utils import *
 from HFTSPlanner.core import graspSampler
 from HFTSPlanner.core import HFTSNode
+from hfts_grasp_planner.srv import PlanGrasp
+
 if __name__ == "__main__":
     
     rospy.init_node('testPlanner')
@@ -43,17 +45,23 @@ if __name__ == "__main__":
     #     raw_input('press to predict')
     #     residual, conf = handMani.predictHandConf(q)
     #     print residual
+    # 
     #     robot.SetDOFValues(conf)
     #     raw_input('press for next')
     #     
     #     
     #     rospy.sleep(0.1)
     
-    n = HFTSNode()
-    planner = graspSampler(verbose = True)
+    rootHFTSNode = HFTSNode()
+    planner = graspSampler(vis=True)
     handFile = packPath + rospy.get_param('/handFile')
     planner.loadHand(handFile)
     planner.loadObj(packPath + '/data', objFile)
-    planner.sampleGrasp(n, 30)
+    finished = False
+    while not finished:
+        retNode = planner.sampleGrasp(rootHFTSNode, 5)
+        finished = retNode.isGoal()
+        rospy.sleep(0.2)
+    
     rospy.spin()
     
