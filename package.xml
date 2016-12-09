@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <package>
   <name>hfts_grasp_planner</name>
-  <version>0.0.0</version>
+  <version>0.1.0</version>
   <description>The hfts_grasp_planner package</description>
   <maintainer email="haustein@kth.se">Joshua Haustein</maintainer>
+  <maintainer email="kaiyuh@kth.se">Kaiyu Hang</maintainer>
   <license>BSD</license>
   <url type="website">https://github.com/kth-ros-pkg/hfts_grasp_planner</url>
   <author email="kaiyuh@kth.se">Kaiyu Hang</author>
@@ -34,6 +35,10 @@
   <run_depend>geometry_msgs</run_depend>
   <run_depend>trajectory_msgs</run_depend>
   <run_depend>message_runtime</run_depend>
+  <run_depend>python-yaml</run_depend>
+  <run_depend>python-numpy</run_depend>
+  <run_depend>python-sklearn</run_depend>
+  <run_depend>OpenRAVE</run_depend>
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>
