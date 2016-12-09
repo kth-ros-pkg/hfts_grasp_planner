@@ -258,9 +258,9 @@ class HFTSGenerator:
             
     def saveHFTS(self, HFTSFile, HFTSParamFile, COMFile):
         data = np.c_ [self._points[:, 1:], self._HFTS]
-        np.save(file = HFTSFile, arr = data, allow_pickle = False)
-        np.save(file = HFTSParamFile, arr = self._HFTSParam, allow_pickle = False)
-        np.save(file = COMFile, arr = self._objCOM, allow_pickle = False)
+        np.save(file = HFTSFile, arr = data)
+        np.save(file = HFTSParamFile, arr = self._HFTSParam)
+        np.save(file = COMFile, arr = self._objCOM)
         
     def getHFTS(self):
         if self._HFTS is None:

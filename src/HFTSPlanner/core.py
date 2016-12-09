@@ -364,7 +364,7 @@ class HFTSNode:
     def isGoal(self):
         return self._isGoal
     
-    def gethandTransform(self):
+    def getHandTransform(self):
         return self._handTransform
         
     def getObjTransform(self):

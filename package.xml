@@ -6,8 +6,8 @@
   <maintainer email="haustein@kth.se">Joshua Haustein</maintainer>
   <license>BSD</license>
   <url type="website">https://github.com/kth-ros-pkg/hfts_grasp_planner</url>
+  <author email="kaiyuh@kth.se">Kaiyu Hang</author>
   <author email="haustein@kth.se">Joshua Haustein</author>
-
   <!-- The *_depend tags are used to specify dependencies -->
   <!-- Dependencies can be catkin packages or system dependencies -->
   <!-- Examples: -->
