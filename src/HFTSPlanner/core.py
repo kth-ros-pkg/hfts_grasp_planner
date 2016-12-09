@@ -8,7 +8,6 @@ from scipy.optimize import fmin_cobyla
 from RobotiqLoader import RobotiqHand
 import sys, time, logging, copy
 import itertools, random
-from HFTSMotion.orRobot.handBase import InvalidTriangleException
 from sets import Set
 from utils import objectFileIO
 import rospy
