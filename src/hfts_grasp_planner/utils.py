@@ -13,7 +13,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from sklearn.neighbors import KDTree
 
-class objectFileIO:
+class ObjectFileIO:
 
     def __init__(self, dataPath, objectIdentifier, varFilter = True):
         self._objId = objectIdentifier

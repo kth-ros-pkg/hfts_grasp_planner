@@ -2,9 +2,8 @@
 
 import rospy
 import rospkg
-from HFTSPlanner.utils import *
-from HFTSPlanner.core import graspSampler
-from HFTSPlanner.core import HFTSNode
+from hfts_grasp_planner.utils import *
+from hfts_grasp_planner.core import graspSampler, HFTSNode
 from hfts_grasp_planner.srv import PlanGrasp, PlanGraspRequest, PlanGraspResponse
 from geometry_msgs.msg import PoseStamped, Pose
 from sensor_msgs.msg import JointState

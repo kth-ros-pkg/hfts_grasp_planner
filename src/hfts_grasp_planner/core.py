@@ -5,15 +5,15 @@ from math import exp
 import openravepy as orpy
 import transformations
 from scipy.optimize import fmin_cobyla
-from RobotiqLoader import RobotiqHand
+from robotiqloader import RobotiqHand
 import sys, time, logging, copy
 import itertools, random
 from sets import Set
-from utils import objectFileIO
+from utils import ObjectFileIO
 import rospy
 
 
-class graspSampler:
+class HFTSSampler:
 
     def __init__(self, verbose=False, numHops=4, vis=False):
 
@@ -61,7 +61,7 @@ class graspSampler:
 
     def loadObj(self, dataPath, objId):
 
-        objectIO = objectFileIO(dataPath, objId)
+        objectIO = ObjectFileIO(dataPath, objId)
         self._dataLabeled, self._levels = objectIO.getHFTS()
         self._nLevel = len(self._levels)
         self._objLoaded = self._orEnv.Load(dataPath + '/' + objId + '/objectModel' + objectIO.getObjFileExtension())
@@ -84,7 +84,9 @@ class graspSampler:
         return contactLabel
 
 
-
+    def computeContactCombinations(self):
+        # TODO implement this function
+        raise NotImplementedError('Not implemented yet.')
 
     def clearConfigCache(self):
 
@@ -99,8 +101,11 @@ class graspSampler:
         self.handles = []
         self.tipPNHandler = []
 
-    def sampleGrasp(self, node, depthLimit, postOpt=False, openHandOffset=0.1):
+    def sampleGrasp(self, node, depthLimit, postOpt=False, labelCache=None, openHandOffset=0.1):
 
+        #TODO implement label cache
+        if labelCache is not None:
+            raise NotImplementedError('Label cache not implemented yet.')
         assert depthLimit >= 0
         if node.getDepth() >= self._nLevel:
             raise ValueError('graspSampler::sampleGrasp input node has an invalid depth')
