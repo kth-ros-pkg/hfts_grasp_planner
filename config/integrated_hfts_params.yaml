@@ -1,0 +1,14 @@
+visualize_grasps: False
+visualize_system: True
+visualize_hfts: False
+p_goal_max: 0.8
+p_goal_w: 1.2
+p_goal_min: 0.01
+min_iterations: 20
+max_iterations: 70
+environment_file_name: data/environments/test_env.xml
+hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s.xml
+robot_file: models/kwr_robotiq/kwr_robotiq.xml
+free_space_weight: 0.5
+connected_space_weight: 4.0
+use_approximates: True

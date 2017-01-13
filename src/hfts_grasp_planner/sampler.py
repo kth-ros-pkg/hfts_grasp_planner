@@ -7,10 +7,8 @@ import math
 import numpy
 import random
 from blist import sortedlist
-
 from rtree import index
-
-from src.hfts_grasp_planner.rrt import SampleData
+from rrt import SampleData
 
 NUMERICAL_EPSILON = 0.00001
 
@@ -36,7 +34,7 @@ class SamplingResult:
 
     def isGoal(self):
         if self.hierarchyInfo is not None:
-            return self.hierarchyInfo.isGoal()
+            return self.hierarchyInfo.is_goal()
         return False
 
     def __repr__(self):
@@ -44,13 +42,6 @@ class SamplingResult:
 
     def __str__(self):
         return "{SamplingResult:[Config=" + str(self.configuration) + "; Info=" + str(self.hierarchyInfo) + "]}"
-
-
-class HotRegion:
-    def __init__(self, samplingResult):
-        self.samplingResult = samplingResult
-        self.temperature = 6.0  # TODO: could be based on the branching factor in the hierarchy
-
 
 class CSpaceSampler:
     def sample(self):
@@ -178,164 +169,6 @@ class CSpaceSampler:
 
         return (bConnected, samples)
 
-class GoalSampler:
-    """ Goal sampler for hierarchically approximatable goal regions """
-    def __init__(self, goalRegionApproximation, pHotRegions=0.8, pCachedSample=0.2):
-        # The hierarchical goal region approximation that is expensive to query
-        self.goalRegionApprox = goalRegionApproximation
-        # A cache of previously sampled approximate goal configurations (stores SamplingResults)
-        # that weren't refined.
-        self.sampleCache = sortedlist([])
-        # A cache that stores all sampling results.
-        self.allSamples = []
-        # A cache of hot regions (stores SamplingResults that have been reached by the tree)
-        self.hotRegions = sortedlist([])
-        # Probability of sampling from the hot regions, i.e. to perform a warm start
-        self.pHotRegions = pHotRegions
-        # Probability of re-using a previously sampled yet unreached approximate goal
-        self.pCachedSample = pCachedSample
-        # Accumulated temperature
-        self.accTemperature = 0.0
-
-    def clear(self):
-        self.sampleCache = sortedlist([])
-        self.allSamples = []
-        self.hotRegions = sortedlist([])
-        self.accTemperature = 0.0
-
-    def _adjustTemperature(self, diffT):
-        self.accTemperature = max(0.0, self.accTemperature + diffT)
-
-    def _sampleHotRegions(self):
-        # Each hot region has a temperature that decreases everytime we sample it
-        p = random.random()
-        summedWeight = 0.0
-        index = 0
-        while summedWeight < p:
-            summedWeight = summedWeight + self.hotRegions[index].temperature / self.accTemperature
-            index = index + 1
-
-        return self.hotRegions[index - 1]
-
-    def _updateHotRegions(self, hotRegion):
-        if not hotRegion.temperature > 0.0:
-            self.hotRegions.remove(hotRegion)
-
-    def _sampleHotRegion(self, hotRegion, seedIk=None):
-        sampleR = self.goalRegionApprox.sampleWarmStart(hotRegion.samplingResult.hierarchyInfo, 1,
-                                                        seedIk=seedIk)
-        sampleR.bOriginatesFromHotRegion = True
-        hotRegion.temperature = hotRegion.temperature - 1.0
-        self._adjustTemperature(-1.0)
-        return sampleR
-
-    def sample(self, bReuseCachedSamples=True, bHotRegionsOnly=False):
-        """ Samples the approximate goal region """
-        cacheResult = True
-
-        if bHotRegionsOnly and len(self.hotRegions) == 0:
-            return None
-
-        # First, let's roll a dice what we wanna do
-        p = random.random()
-        if (p < self.pHotRegions or bHotRegionsOnly) and len(self.hotRegions) > 0:
-            # Let's sample from a hot region. That is a region where we know we connected the RRT
-            # already to. We can sample from this region again by performing a warm start
-            # Choose a random hot region
-            hotRegion = self._sampleHotRegions()
-            # now do the warm start and we get a new sample which is created from a deeper hierarchy level
-            sampleResult = self._sampleHotRegion(hotRegion)
-            # update the hot regions list, e.g. remove hot regions that are cooled down
-            self._updateHotRegions(hotRegion)
-        elif p < self.pCachedSample + self.pHotRegions and len(self.sampleCache) > 0 and bReuseCachedSamples:
-            # re-use a previously sampled goal sample that was not reachable before
-            # i.e. it might be reachable by now and we get this for free
-            sampleId = random.choice(self.sampleCache)
-            sampleResult = self.allSamples[sampleId]
-            cacheResult = False  # in this case we don't need to cache the result
-        else:
-            # Else, just get another sample from the roughest approximation layer
-            sampleResult = self.goalRegionApprox.sample(1)
-
-        if not sampleResult.isValid():
-            # raise ValueError('Could not sample goal region. Is it empty?')
-            cacheResult = False
-            print 'WARNING: Goal region sample was None'
-
-        if cacheResult:
-            # Let's cache the query to save sampling and to remember it
-            sampleResult.cacheId = len(self.allSamples)
-            self.allSamples.append(sampleResult)
-            self.sampleCache.add(sampleResult.cacheId)
-        return sampleResult.toSampleData()
-
-    def isApproxGoal(self, sample):
-        """ Checks whether the given sample is an approximate goal.
-            While checking this property might be cheap for some applications, it is definitely
-            not cheap for fingertip grasp planning. Therefore, by default, we just check
-            whether we sampled sample before. As a consequence, a sample that might actually
-            be a goal, but it wasn't sampled by this sampler, is falsely classified as non-goal.
-        """
-        return self._isCachedSample(sample)
-        # alternatively we query the goal region approximation here
-        # TODO: can we decide here somehow, how deep we can go?
-        # self.goalRegionApprox.containsApprox(qReachable, 1)
-
-    def isGoal(self, sample):
-        """ Checks whether sample is a real goal. """
-        if not self._isCachedSample(sample):
-            return False
-        key = sample.getId()
-        return self.goalRegionApprox.isGoal(self.allSamples[key])
-
-    def _isCachedSample(self, sample):
-        key = sample.getId()
-        return key is not None and key >= 0 and key < len(self.allSamples)
-
-    def refineGoalSampling(self, sample):
-        """ Tells the sampler that the sample is now in the tree and we wish to explore that area in more detail """
-        if not self._isCachedSample(sample):
-            raise ValueError('The given sample has not been sampled before.')
-
-        key = sample.getId()
-        # The sample has been reached by the planner, no need to cache it for sampling anymore.
-        self.sampleCache.remove(key)
-
-        # add hot region
-        newHotRegion = HotRegion(self.allSamples[key])
-        self.hotRegions.add(newHotRegion)
-        self._adjustTemperature(newHotRegion.temperature)
-        # print len(self.hotRegions)
-
-    def refineAndSample(self, sample):
-        """ First refines the hot region where the sample originates from and then samples the new
-            hot region. Returns the new sample."""
-        if not self._isCachedSample(sample):
-            raise ValueError('The given sample has not been sampled before.')
-
-        key = sample.getId()
-        # The sample has been reached by the planner, no need to cache it for sampling anymore.
-        self.sampleCache.remove(key)
-
-        # add hot region
-        newHotRegion = HotRegion(self.allSamples[key])
-        self.hotRegions.add(newHotRegion)
-        self._adjustTemperature(newHotRegion.temperature)
-        # Sample the new hot region
-        sampleResult = self._sampleHotRegion(newHotRegion, seedIk=sample.getConfiguration())
-        self._updateHotRegions(newHotRegion)
-        if sampleResult.isValid():
-            sampleResult.cacheId = len(self.allSamples)
-            self.allSamples.append(sampleResult)
-            self.sampleCache.add(sampleResult.cacheId)
-        return sampleResult.toSampleData()
-
-    def goalIsFromHotRegion(self, sampleData):
-        if not self._isCachedSample(sampleData):
-            raise ValueError('The given sample has not been sampled before.')
-        key = sampleData.getId()
-        return self.allSamples[key].bOriginatesFromHotRegion
-
 class SimpleHierarchyNode:
     class DummyHierarchyInfo:
         def __init__(self, uniqueLabel):
@@ -377,14 +210,14 @@ class SimpleHierarchyNode:
         return self.hierarchyInfo.getUniqueLabel()
 
     def getT(self):
-        if self.hierarchyInfo.isGoal() and self.hierarchyInfo.isValid():
+        if self.hierarchyInfo.is_goal() and self.hierarchyInfo.isValid():
             return 1.5
         if self.hierarchyInfo.isValid():
             return 1.0
         return 0.0
 
     def isGoal(self):
-        return self.hierarchyInfo.isGoal()
+        return self.hierarchyInfo.is_goal()
 
     def getActiveConfiguration(self):
         return self.config
@@ -395,14 +228,14 @@ class SimpleHierarchyNode:
 class NaiveGoalSampler:
     def __init__(self, goalRegion, numIterations=40, debugDrawer=None):
         self.goalRegion = goalRegion
-        self.depthLimit = goalRegion.getMaxDepth()
-        self.goalRegion.setMaxIter(numIterations)
+        self.depthLimit = goalRegion.get_max_depth()
+        self.goalRegion.set_max_iter(numIterations)
         self._debugDrawer = debugDrawer
         self.clear()
 
     def clear(self):
         self.cache = []
-        self._rootNode = SimpleHierarchyNode(None, self.goalRegion.getRoot())
+        self._rootNode = SimpleHierarchyNode(None, self.goalRegion.get_root())
         self._labelNodeMap = {}
         self._labelNodeMap['root'] = self._rootNode
         if self._debugDrawer is not None:
@@ -452,7 +285,7 @@ class NaiveGoalSampler:
         self._addNewSample(mySample)
         if self._debugDrawer is not None:
             self._debugDrawer.drawHierarchy(self._rootNode)
-        if not mySample.isValid() or not mySample.isGoal():
+        if not mySample.isValid() or not mySample.is_goal():
             logging.debug('[NaiveGoalSampler::sample] Failed. Did not get a valid goal!')
             return SampleData(None)
         else:
@@ -469,225 +302,10 @@ class NaiveGoalSampler:
     def isGoal(self, sample):
         sampledBefore = sample.getId() > 0 and sample.getId() < len(self.cache)
         if sampledBefore:
-            return self.goalRegion.isGoal(self.cache[sample.getId()])
+            return self.goalRegion.is_goal(self.cache[sample.getId()])
         return False
             # return True
         # return self.goalRegion.isGoalConfiguration(qReachable)
-
-# Minimal temperature that a node can have
-MINIMAL_TEMPERATURE = 1.0
-# Low temperature for nodes that are infeasible(invalid)
-LOW_TEMPERATURE = 1.0
-# Medium temperature for nodes that are valid
-MEDIUM_TEMPERATURE = 5.0
-# High temperature for nodes that were connected to the RRT
-HIGH_TEMPERATURE = 15.0
-# Cool down value when a node is sampled
-SAMPLING_COOL_DOWN = 1.0
-
-
-class HierarchyNode:
-    def __init__(self, parent, plannerNode, initialTemp=MEDIUM_TEMPERATURE, sampleId=-1):
-        self._parent = parent
-        self._ownTemperature = initialTemp
-        self._accChildrenTemperature = 0.0
-        self._plannerNode = plannerNode
-        self._sampleId = sampleId
-        self._children = []
-
-    def addChild(self, child):
-        self._children.append(child)
-        self._accChildrenTemperature += child.getTemperature()
-
-    # def addNeighbor(self, neighbor):
-    #     self._neighbors.append(neighbor)
-
-    def getTemperature(self, includeChildren=True):
-        if len(self._children) > 0 and includeChildren:
-            childrenTemp = self._accChildrenTemperature / len(self._children)
-        else:
-            childrenTemp = 0.0
-        return max(MINIMAL_TEMPERATURE, self._ownTemperature + childrenTemp)
-
-    def getAccChildrenTemperature(self):
-        return self._accChildrenTemperature
-
-    def addTemperature(self, diff):
-        self._ownTemperature = max(0.0, self._ownTemperature + diff)
-
-    def updateChildTemperature(self, oldTemperature, newTemperature):
-        self._accChildrenTemperature = self._accChildrenTemperature - oldTemperature + newTemperature
-
-    def hasChildren(self):
-        return len(self._children) > 0
-
-    def getPlannerNode(self):
-        return self._plannerNode
-
-    def getChild(self, id):
-        return self._children[id]
-
-    def getSampleId(self):
-        return self._sampleId
-
-    def getNumChildren(self):
-        return len(self._children)
-
-    def getParent(self):
-        return self._parent
-
-    def getChildren(self):
-        return self._children
-
-    def hasExtendibleChildren(self):
-        if self.hasChildren():
-            return self._children[0].isExtendible()
-        return False
-
-    def isExtendible(self):
-        return self._plannerNode.isExtendible()
-
-    def setTemperature(self, temp):
-        self._temperature = temp
-
-
-class HierarchyGoalSampler:
-    """ A goal sampler that samples goals from a tree-like hierarchy."""
-    def __init__(self, goalHierarchy, cspaceSampler, debugDrawer=None):
-        self._goalHierarchy = goalHierarchy
-        self._rootNode = HierarchyNode(parent=None, plannerNode=self._goalHierarchy.getRoot())
-        self._debugDrawer = debugDrawer
-        self._allSamples = []
-        self._hierarchyNodesMap = {}
-        self._cspaceSampler = cspaceSampler
-
-    def clear(self):
-        self._rootNode = HierarchyNode(parent=None, plannerNode=self._goalHierarchy.getRoot())
-        self._allSamples = []
-        self._hierarchyNodesMap = {}
-
-    def isGoal(self, sample):
-        key = sample.getId()
-        if not self._isValidSample(sample):
-            raise ValueError('Invalid sample id %i!' % sample.getId())
-        return self._goalHierarchy.isGoal(self._allSamples[key][0])
-
-    def isApproxGoal(self, sample):
-        # TODO
-        raise NotImplementedError("isApproxGoal is not implemented yet!")
-
-    def sample(self, bDummy=False, currentNode=None):
-        """ Samples a new goal configuration from the hierarchical goal planner """
-        logging.debug('[HierarchyGoalSampler::sample] Sampling a new goal')
-        if currentNode is None:
-            currentNode = self._rootNode
-        # Move down in the hierarchy
-        while True:
-            # in case the current node has no children, we have to sample from it
-            if not currentNode.hasExtendibleChildren():
-                logging.debug('[HierarchyGoalSampler::sample] currentNode has no children,' +
-                              'hence sampling it')
-                return self._sampleHierarchyNode(currentNode)
-            # else pick a random child with bias on hot ones
-            logging.debug('[HierarchyGoalSampler::sample] Current node has children, picking a child')
-            p = random.random()
-            chosenChild = self._randomlyPickChild(p, currentNode)
-            # let's roll a dice to see if we actually wanna go deeper
-            p = random.random()
-            # make the decision based on how hot the selected child is
-            relTemperature = chosenChild.getTemperature() / (currentNode.getTemperature(includeChildren=False) +
-                                                             chosenChild.getTemperature())
-            if p > relTemperature:
-                logging.debug('[HierarchyGoalSampler::sample] Not going further down. Sampling this node')
-                return self._sampleHierarchyNode(currentNode)
-            else:
-                logging.debug('[HierarchyGoalSampler::sample] Decided to go further down in hierachy.')
-                currentNode = chosenChild
-
-    def refineGoalSampling(self, sample):
-        """ Notifies the sampler to increase the probability of sampling the goal planner from
-            the node for which the given sample is a representative. """
-        key = sample.getId()
-        if not self._isValidSample(sample):
-            raise ValueError('Invalid sample id %i!') % sample.getId()
-        treeNode = self._allSamples[key][1]
-        if not treeNode._plannerNode.isExtendible():
-            logging.debug('[HierarchyGoalSampler::refineGoalSampling] We are refining a bottom level sample'\
-                          + '. The sample is a goal of bad quality and therefore not counted as goal.' \
-                          + ' Since we can not sample from it, we increase this sample s parent s temperature' \
-                          +  'instead!')
-            treeNode = treeNode.getParent()
-
-        oldTemperature = treeNode.getTemperature()
-        treeNode.addTemperature(HIGH_TEMPERATURE)
-        self._propagateChangesUp(treeNode, oldTemperature)
-        return treeNode
-
-    def refineAndSample(self, sample):
-        """ First refines the goal sampling and then samples the node immediately.
-            Returns a sample. """
-        treeNode = self.refineGoalSampling(sample)
-        return self.sample(currentNode=treeNode)
-
-    def _sampleHierarchyNode(self, hNode):
-        sampleResult = self._goalHierarchy.sampleWarmStart(hierarchyNode=hNode.getPlannerNode(), depthLimit=1)
-        uniqueLabel = sampleResult.hierarchyInfo.getUniqueLabel()
-        oldTemperature = hNode.getTemperature()
-        bNewSample = True
-        if uniqueLabel in self._hierarchyNodesMap:
-            logging.debug('[HierarchyGoalSampler::_sampleHierarchyNode] We received a node we received' \
-                          + 'before from the goal sampler: ' + uniqueLabel)
-            oldSampleResult = self._allSamples[self._hierarchyNodesMap[uniqueLabel].getSampleId()][0]
-            if not sampleResult.isValid() or \
-                not oldSampleResult.isValid() or \
-                self._cspaceSampler.configsAreEqual(sampleResult.getConfiguration(),
-                                                   oldSampleResult.getConfiguration()):
-
-                sampleResult = SamplingResult(None)
-                bNewSample = False
-            else:
-                logging.debug('[HierarchyGoalSampler::_sampleHierarchyNode] However, the arm + hand ' \
-                              + ' configuration is different. We consider it a new sample.')
-        if bNewSample:
-            logging.debug('[HierarchyGoalSampler::_sampleHierarchyNode] We received a new node. Adding it ' +
-                          'to our goal sample hierarchy')
-            initialTemp = MEDIUM_TEMPERATURE
-            if not sampleResult.isValid():
-                initialTemp = LOW_TEMPERATURE
-            sampleId = len(self._allSamples)
-            newNode = HierarchyNode(parent=hNode, plannerNode=sampleResult.hierarchyInfo,
-                                    initialTemp=initialTemp, sampleId=sampleId)
-            hNode.addChild(newNode)
-            self._hierarchyNodesMap[uniqueLabel] = newNode
-            sampleResult.cacheId = sampleId
-            self._allSamples.append((sampleResult, newNode))
-        hNode.addTemperature(-SAMPLING_COOL_DOWN)
-        self._propagateChangesUp(hNode, oldTemperature)
-        if self._debugDrawer is not None:
-            self._debugDrawer.drawHierarchy(self._rootNode)
-        return sampleResult.toSampleData()
-
-    def _randomlyPickChild(self, p, parent):
-        acctemp = 0.0
-        chosenChildId = 0
-        while acctemp < p and chosenChildId < parent.getNumChildren():
-            acctemp += parent.getChild(chosenChildId).getTemperature() / parent.getAccChildrenTemperature()
-            chosenChildId += 1
-        return parent.getChild(chosenChildId-1)
-
-    def _propagateChangesUp(self, node, oldNodeTemperature):
-        # go recursively upwards and update temperatures
-        parent = node.getParent()
-        while parent is not None:
-            oldParentTemperature = parent.getTemperature()
-            parent.updateChildTemperature(oldNodeTemperature, node.getTemperature())
-            oldNodeTemperature = oldParentTemperature
-            node = parent
-            parent = parent.getParent()
-
-    def _isValidSample(self, sample):
-        return sample.getId() >= 0 and sample.getId() < len(self._allSamples)
-
 
 class FreeSpaceModel(object):
     def __init__(self, cspaceSampler):
@@ -801,7 +419,7 @@ class FreeSpaceProximityHierarchyNode(object):
         self._T = 0.0
         self._T_c = 0.0
         self._T_p = 0.0
-        self._numLeavesInBranch = 1 if goalNode.isLeaf() else 0
+        self._numLeavesInBranch = 1 if goalNode.is_leaf() else 0
         self._numTimesSampled = 0
         self._activeChildrenCapacity = activeChildrenCapacity
         self._configs = []
@@ -817,7 +435,7 @@ class FreeSpaceProximityHierarchyNode(object):
             self._goalNodes.append(goalNode)
             self._configs.append(config)
             self._activeGoalNodeIdx = 1
-            self._configsRegistered.append(not goalNode.isValid())
+            self._configsRegistered.append(not goalNode.is_valid())
 
     def getT(self):
         return self._T
@@ -888,10 +506,10 @@ class FreeSpaceProximityHierarchyNode(object):
         return self._numLeavesInBranch
 
     def getMaxNumLeavesInBranch(self):
-        return self._goalNodes[0].getPossibleNumLeaves()
+        return self._goalNodes[0].get_num_possible_leaves()
 
     def getMaxNumChildren(self):
-        return self._goalNodes[0].getPossibleNumChildren()
+        return self._goalNodes[0].get_num_possible_children()
 
     def getCoverage(self):
         if self.isLeaf():
@@ -902,7 +520,7 @@ class FreeSpaceProximityHierarchyNode(object):
         return self._parent
 
     def getQuality(self):
-        return self._goalNodes[0].getQuality()
+        return self._goalNodes[0].get_quality()
 
     def hasChildren(self):
         return self.getNumChildren() > 0
@@ -914,7 +532,7 @@ class FreeSpaceProximityHierarchyNode(object):
         return self._children
 
     def getContactLabels(self):
-        return self._goalNodes[0].getContactLabels()
+        return self._goalNodes[0].get_labels()
 
     def getChildrenContactLabels(self):
         return self._childrenContactLabels
@@ -923,7 +541,7 @@ class FreeSpaceProximityHierarchyNode(object):
         return self._activeChildren
 
     def getUniqueLabel(self):
-        return self._goalNodes[0].getUniqueLabel()
+        return self._goalNodes[0].get_unique_label()
 
     def getConfigurations(self):
         """ Returns all configurations stored for this hierarchy node."""
@@ -933,15 +551,15 @@ class FreeSpaceProximityHierarchyNode(object):
         """ Returns only valid configurations """
         validConfigs = []
         for idx in range(1, len(self._goalNodes)):
-            if self._goalNodes[idx].isValid():
+            if self._goalNodes[idx].is_valid():
                 validConfigs.append(self._configs[idx])
         return validConfigs
 
-    def getDepth(self):
-        return self._goalNodes[0].getDepth()
+    def get_depth(self):
+        return self._goalNodes[0].get_depth()
 
     def isRoot(self):
-        return self._goalNodes[0].getDepth() == 0
+        return self._goalNodes[0].get_depth() == 0
 
     def setActiveConfiguration(self, idx):
         assert idx in range(len(self._goalNodes)-1)
@@ -961,24 +579,24 @@ class FreeSpaceProximityHierarchyNode(object):
         unregisteredApprox = []
         for i in range(1, len(self._configs)):
             if not self._configsRegistered[i]:
-                if self._goalNodes[i].isGoal():
-                    unregisteredGoals.append((self._configs[i], self._goalNodes[i].getHandConfig()))
+                if self._goalNodes[i].is_goal():
+                    unregisteredGoals.append((self._configs[i], self._goalNodes[i].get_hand_config()))
                 else:
                     unregisteredApprox.append(self._configs[i])
                 self._configsRegistered[i] = True
         return unregisteredGoals, unregisteredApprox
 
     def isGoal(self):
-        return self._goalNodes[self._activeGoalNodeIdx].isGoal() and self.isValid()
+        return self._goalNodes[self._activeGoalNodeIdx].is_goal() and self.isValid()
 
     def isValid(self):
-        bIsValid = self._goalNodes[self._activeGoalNodeIdx].isValid()
+        bIsValid = self._goalNodes[self._activeGoalNodeIdx].is_valid()
         if not bIsValid:
-            assert not reduce(lambda x, y: x or y, [x.isValid() for x in self._goalNodes], False)
-        return self._goalNodes[self._activeGoalNodeIdx].isValid()
+            assert not reduce(lambda x, y: x or y, [x.is_valid() for x in self._goalNodes], False)
+        return self._goalNodes[self._activeGoalNodeIdx].is_valid()
 
     def isExtendible(self):
-        return self._goalNodes[0].isExtendible()
+        return self._goalNodes[0].is_extendible()
 
     def isLeaf(self):
         return not self.isExtendible()
@@ -993,7 +611,7 @@ class FreeSpaceProximityHierarchyNode(object):
 
     def toSampleData(self, idNum=-1):
         return SampleData(self._configs[self._activeGoalNodeIdx],
-                          data=self._goalNodes[self._activeGoalNodeIdx].getHandConfig(),
+                          data=self._goalNodes[self._activeGoalNodeIdx].get_hand_config(),
                           idNum=idNum)
 
     def addGoalSample(self, sample):
@@ -1017,22 +635,23 @@ class FreeSpaceProximityHierarchyNode(object):
 
 
 class FreeSpaceProximitySampler(object):
-    def __init__(self, goalSampler, cfreeSampler, k=4, numIterations=None,
+    def __init__(self, goalSampler, cfreeSampler, k=4, numIterations=10,
                  minNumIterations=8,
                  returnApproximates=True,
                  connectedWeight=10.0, freeSpaceWeight=5.0, debugDrawer=None):
         self._goalHierarchy = goalSampler
         self._k = k
-        if numIterations is None:
-            numIterations = goalSampler.getMaxDepth() * [10]
-        elif type(numIterations) == int:
-            numIterations = goalSampler.getMaxDepth() * [numIterations]
-        elif type(numIterations) == list:
-            numIterations = numIterations
-        else:
-            raise ValueError('numIterations has invalid type %s. Supported are int, list and None' %
-                             str(type(numIterations)))
-        self._numIterations = numIterations
+        # if numIterations is None:
+        #     numIterations = goalSampler.getMaxDepth() * [10]
+        # elif type(numIterations) == int:
+        #     numIterations = goalSampler.getMaxDepth() * [numIterations]
+        # elif type(numIterations) == list:
+        #     numIterations = numIterations
+        # else:
+        #     raise ValueError('numIterations has invalid type %s. Supported are int, list and None' %
+        #                      str(type(numIterations)))
+        # TODO decide how we wanna do this properly. Should the user be able to define level specific num iterations?
+        self._numIterations = max(1, goalSampler.get_max_depth()) * [numIterations]
         self._minNumIterations = minNumIterations
         self._connectedWeight = connectedWeight
         self._freeSpaceWeight = freeSpaceWeight
@@ -1042,7 +661,7 @@ class FreeSpaceProximitySampler(object):
         self._cfreeSampler = cfreeSampler
         self._labelCache = {}
         self._goalLabels = []
-        self._rootNode = FreeSpaceProximityHierarchyNode(goalNode=self._goalHierarchy.getRoot(),
+        self._rootNode = FreeSpaceProximityHierarchyNode(goalNode=self._goalHierarchy.get_root(),
                                                          initialTemp=self._freeSpaceWeight)
         maxDist = numpy.linalg.norm(cfreeSampler.getUpperBounds() - cfreeSampler.getLowerBounds())
         self._minConnectionChance = self._distanceKernel(maxDist)
@@ -1055,10 +674,15 @@ class FreeSpaceProximitySampler(object):
         self._nonConnectedSpace = None
         self._labelCache = {}
         self._goalLabels = []
-        self._rootNode = FreeSpaceProximityHierarchyNode(goalNode=self._goalHierarchy.getRoot(),
+        self._rootNode = FreeSpaceProximityHierarchyNode(goalNode=self._goalHierarchy.get_root(),
                                                          initialTemp=self._freeSpaceWeight)
         if self._debugDrawer is not None:
             self._debugDrawer.clear()
+
+    def object_reloaded(self):
+        self.clear()
+        self._numIterations = self._goalHierarchy.get_max_depth() * [self._numIterations[0]]
+
 
     def getNumGoalNodesSampled(self):
         return len(self._labelCache)
@@ -1075,7 +699,7 @@ class FreeSpaceProximitySampler(object):
         self._nonConnectedSpace = nonConnectedSpace
 
     def _getHierarchyNode(self, goalSample):
-        label = goalSample.hierarchyInfo.getUniqueLabel()
+        label = goalSample.hierarchyInfo.get_unique_label()
         bNew = False
         hierarchyNode = None
         if label in self._labelCache:
@@ -1108,11 +732,11 @@ class FreeSpaceProximitySampler(object):
         goalNode = node.getGoalSamplerHierarchyNode()
         numValids = 0
         for c in range(self._k):
-            self._goalHierarchy.setMaxIter(self._numIterations[depth])
-            goalSample = self._goalHierarchy.sampleWarmStart(hierarchyNode=goalNode, depthLimit=1)
-            if goalSample.hierarchyInfo.isGoal() and goalSample.hierarchyInfo.isValid():
+            self._goalHierarchy.set_max_iter(self._numIterations[depth])
+            goalSample = self._goalHierarchy.sample_warm_start(hierarchy_node=goalNode, depth_limit=1)
+            if goalSample.hierarchyInfo.is_goal() and goalSample.hierarchyInfo.is_valid():
                 logging.debug('[FreeSpaceProximitySampler::_sampleKChildren] We sampled a goal here!!!')
-            if goalSample.hierarchyInfo.isValid():
+            if goalSample.hierarchyInfo.is_valid():
                 numValids += 1
                 logging.debug('[FreeSpaceProximitySampler::_sampleKChildren] Valid sample here!')
             (hierarchyNode, bNew) = self._getHierarchyNode(goalSample)
@@ -1259,22 +883,22 @@ class FreeSpaceProximitySampler(object):
 
     def _sampleChild(self, node):
         goalNode = node.getGoalSamplerHierarchyNode()
-        depth = node.getDepth()
+        depth = node.get_depth()
         numIterations = int(self._minNumIterations + \
                         node.getT() / (self._connectedWeight + self._freeSpaceWeight) * \
                         (self._numIterations[depth] - self._minNumIterations))
         # numIterations = max(self._minNumIterations, int(numIterations))
         assert numIterations >= self._minNumIterations
         assert numIterations <= self._numIterations[depth]
-        self._goalHierarchy.setMaxIter(numIterations)
-        doPostOpt = depth == self._goalHierarchy.getMaxDepth() - 1
+        self._goalHierarchy.set_max_iter(numIterations)
+        doPostOpt = depth == self._goalHierarchy.get_max_depth() - 1
         childrenContactLabes = node.getChildrenContactLabels()
-        goalSample = self._goalHierarchy.sampleWarmStart(hierarchyNode=goalNode, depthLimit=1,
-                                                         labelCache=childrenContactLabes,
-                                                         postOpt=doPostOpt)
-        if goalSample.hierarchyInfo.isGoal() and goalSample.hierarchyInfo.isValid():
+        goalSample = self._goalHierarchy.sample_warm_start(hierarchy_node=goalNode, depth_limit=1,
+                                                           label_cache=childrenContactLabes,
+                                                           post_opt=doPostOpt)
+        if goalSample.hierarchyInfo.is_goal() and goalSample.hierarchyInfo.is_valid():
             logging.debug('[FreeSpaceProximitySampler::_sampleChild] We sampled a goal here!!!')
-        if goalSample.hierarchyInfo.isValid():
+        if goalSample.hierarchyInfo.is_valid():
             logging.debug('[FreeSpaceProximitySampler::_sampleChild] Valid sample here!')
         (hierarchyNode, bNew) = self._getHierarchyNode(goalSample)
         if bNew:

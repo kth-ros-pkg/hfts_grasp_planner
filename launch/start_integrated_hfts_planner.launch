@@ -1,0 +1,6 @@
+<launch>
+
+    <node name="hfts_integrated_planner_node" pkg="hfts_grasp_planner" type="hfts_integrated_planner_node.py" output="screen" respawn="false"/>
+    <rosparam command="load" file="$(find hfts_grasp_planner)/config/integrated_hfts_params.yaml" />
+
+</launch>

@@ -7,10 +7,8 @@ import IPython
 import random
 import openravepy as orpy
 import logging
-from src.MotionPlanner.rrt import SampleData, Constraint, ConstraintsManager
-from src.MotionPlanner.sampler import CSpaceSampler
-from kukaSchunkORRobot import KukaSchunkSDH_ORRobot
-# import IPython
+from rrt import SampleData, Constraint, ConstraintsManager
+from sampler import CSpaceSampler
 
 NUMERICAL_EPSILON = 0.00001
 MINIMAL_STEP_LENGTH = 0.001
@@ -95,21 +93,24 @@ class GraspApproachConstraint(Constraint):
             return config
 
 class GraspApproachConstraintsManager(ConstraintsManager):
-    def __init__(self, orEnv, robot, spaceSampler, objectName):
+    def __init__(self, or_env, robot, space_sampler):
         super(GraspApproachConstraintsManager, self).__init__()
-        self.orEnv = orEnv
-        self.orRobot = robot
-        self.objectName = objectName
-        self.spaceSampler = spaceSampler
+        self.or_env = or_env
+        self.or_robot = robot
+        self.object_name = None
+        self.space_sampler = space_sampler
 
-    def registerNewTree(self, tree):
-        newConstraints = []
+    def set_object_name(self, object_name):
+        self.object_name = object_name
+
+    def register_new_tree(self, tree):
+        new_constraints = []
         # Except for the forward tree, create GraspApproachConstraints
         if not tree._bForwardTree:
             # TODO: set activation distance based on object size
-            newConstraints.append(GraspApproachConstraint(self.orEnv, self.orRobot, self.spaceSampler,
-                                                          self.objectName))
-        self._constraintsStorage[tree.getId()] = newConstraints
+            new_constraints.append(GraspApproachConstraint(self.or_env, self.or_robot, self.space_sampler,
+                                                           self.object_name))
+        self._constraints_storage[tree.getId()] = new_constraints
 
 class RobotCSpaceSampler(CSpaceSampler):
     def __init__(self, orEnv, robot, scalingFactors=None):
@@ -181,10 +182,11 @@ class RobotCSpaceSampler(CSpaceSampler):
         return self._scalingFactors
 
 if __name__ == "__main__":
-    env = orpy.Environment()
+    raise NotImplementedError('Test not implemented')
+    # env = orpy.Environment()
     # env.Load('/home/joshua/projects/cvap_kuka_arm/res/kuka-kr5-r850.zae')
-    env.Load('/home/joshua/projects/RRTCostlyGoalRegions/grasping/data/orEnv/cvapRobotLab_objects.xml')
-    sampler = RobotCSpaceSampler(env, KukaSchunkSDH_ORRobot(env.GetRobots()[0]))
-    for i in range(1000):
-        s = sampler.sample()
-        print s
+    # env.Load('/home/joshua/projects/RRTCostlyGoalRegions/grasping/data/orEnv/cvapRobotLab_objects.xml')
+    # sampler = RobotCSpaceSampler(env, KukaSchunkSDH_ORRobot(env.GetRobots()[0]))
+    # for i in range(1000):
+    #     s = sampler.sample()
+    #     print s

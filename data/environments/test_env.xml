@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/kwr_robotiq/kwr_robotiq.xml"/>
+    <KinBody name="test_object">
+        <Translation>0.76 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../bunny/objectModel.ply</Data>
+                <Render>../bunny/objectModel.ply</Render>
+            </Geom>
+        </Body>
+   </KinBody>
+</Environment>

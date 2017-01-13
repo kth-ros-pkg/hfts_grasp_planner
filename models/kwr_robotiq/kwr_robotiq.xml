@@ -1,0 +1,23 @@
+<robot name="kmr_iiwa_robotiq">
+    <robot file="/home/joshua/resources/robdream_models/confidential_collada/kuka-kmr.zae"/>
+    <robot file="../robotiq/urdf_openrave_conversion/robotiq_s.xml" prefix="hand_"/>
+    <kinbody>
+        <body name="hand_palm">
+            <offsetfrom>iiwa.link7</offsetfrom>
+            <translation>0.0 0.0 0.09</translation>
+            <rotationaxis>1 0 0 -90</rotationaxis>
+        </body>
+        <joint name="iiwa_robotiq_dummy_joint" type="hinge" enable="false">
+            <body>iiwa.link7</body>
+            <body>hand_palm</body>
+            <limits>0 0</limits>
+        </joint>
+    </kinbody>
+    <manipulator name="arm_with_robotiq">
+        <base>kmr_iiwa.base</base>
+        <effector>iiwa.link7</effector>
+        <joints>hand_JF20 hand_JF2V</joints>
+        <closingdirection>1 1</closingdirection>
+        <direction>1 0 0</direction>
+    </manipulator>
+</robot>

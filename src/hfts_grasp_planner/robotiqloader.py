@@ -1,15 +1,20 @@
-
-
 import numpy as np
 import transformations
 import math
 from utils import vecAngelDiff
-import rospy
+
+
+# TODO this should be defined in a super module
+class InvalidTriangleException(Exception):
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)
+
 
 class RobotiqHand:
-
     def __init__(self, env=None, handFile=None):
-
         self._orEnv = env
         self._orEnv.Load(handFile)
         self._orHand = self._orEnv.GetRobots()[0]
@@ -81,7 +86,6 @@ class RobotiqHand:
     
     
     def getOriTipPN(self, handConf):
-
         self._orHand.SetTransform(np.identity(4))
         self._orHand.SetDOFValues(handConf)
         return self.getTipPN()
@@ -117,7 +121,6 @@ class RobotiqHand:
         return T
         
     def getTriFrame(self, points):
-
         ori = np.sum(points, axis=0) / 3.
         x = (points[0, :] - ori) / np.linalg.norm(points[0, :] - ori)
         e01 = points[1, :] - points[0, :]

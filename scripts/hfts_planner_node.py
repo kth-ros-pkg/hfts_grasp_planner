@@ -26,8 +26,8 @@ class HandlerClass(object):
         self._planner = graspSampler(vis=b_visualize)
         # Load hand and save joint names
         hand_file = self._package_path + rospy.get_param('handFile')
-        self._planner.loadHand(hand_file)
-        or_hand = self._planner.getOrHand()
+        self._planner.load_hand(hand_file)
+        or_hand = self._planner.get_or_hand()
         joints = or_hand.GetJoints()
         self._joint_names = []
         for joint in joints:
@@ -38,16 +38,16 @@ class HandlerClass(object):
         # TODO generate HFTS from point cloud if point cloud is specified
         # pointCloud = req.point_cloud
         # Load the requested object first
-        self._planner.loadObj(self._package_path + '/data', req.object_identifier)
+        self._planner.load_object(self._package_path + '/data', req.object_identifier)
         # We always start from the root node, so create a root node
         root_hfts_node = HFTSNode()
         max_iterations = rospy.get_param('max_iterations', 20)
         iteration = 0
         # Iterate until either shutdown, max_iterations reached or a good grasp was found
         while iteration < max_iterations and not rospy.is_shutdown():
-            return_node = self._planner.sampleGrasp(root_hfts_node, 30)
-            if return_node.isGoal():
-                grasp_pose = return_node.getHandTransform()
+            return_node = self._planner.sample_grasp(root_hfts_node, 30)
+            if return_node.is_goal():
+                grasp_pose = return_node.get_hand_transform()
                 pose_quaternion = tff.quaternion_from_matrix(grasp_pose)
                 pose_position = grasp_pose[:3, -1]
                 # Save pose in ROS pose
@@ -68,7 +68,7 @@ class HandlerClass(object):
                 stamped_ros_grasp_pose.pose = ros_grasp_pose
                 stamped_ros_grasp_pose.header = header
                 # Create JointState message to send hand configuration
-                hand_conf = return_node.getHandConfig()
+                hand_conf = return_node.get_hand_config()
                 ros_hand_joint_state = JointState()
                 ros_hand_joint_state.header = header
                 ros_hand_joint_state.position = hand_conf

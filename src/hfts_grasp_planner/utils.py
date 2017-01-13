@@ -154,9 +154,12 @@ class ObjectFileIO:
         plt.show()
     
         
-    
-    
-    
+def clamp(values, min_values, max_values):
+    clamped_values = len(values) * [0.0]
+    assert len(values) == len(min_values) and len(values) == len(max_values)
+    for i in range(len(values)):
+        clamped_values[i] = max(min(values[i], max_values[i]), min_values[i])
+    return clamped_values
 
 
 class HFTSGenerator:

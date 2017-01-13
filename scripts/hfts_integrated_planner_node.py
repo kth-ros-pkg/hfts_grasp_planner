@@ -4,6 +4,7 @@ import IPython
 import rospy
 import rospkg
 from hfts_grasp_planner.srv import PlanGraspMotion, PlanGraspMotionRequest, PlanGraspMotionResponse
+from hfts_grasp_planner.integrated_hfts_planner import IntegratedHFTSPlanner
 
 
 PACKAGE_NAME = 'hfts_grasp_planner'
@@ -21,14 +22,14 @@ class HandlerClass(object):
         b_visualize_grasps = rospy.get_param('visualize_grasps', default=False)
         b_visualize_system = rospy.get_param('visualize_system', default=False)
         b_visualize_hfts = rospy.get_param('visualize_hfts', default=False)
-        env_file = rospy.get_param('environment_file_name')
+        env_file = self._package_path + '/' + rospy.get_param('environment_file_name')
         p_goal_max = rospy.get_param('p_goal_max', default=0.8)
         p_goal_w = rospy.get_param('p_goal_w', default=1.2)
         p_goal_min = rospy.get_param('p_goal_min', default=0.01)
         min_iterations = rospy.get_param('min_iterations', default=20)
         max_iterations = rospy.get_param('max_iterations', default=70)
-        hand_file = self._package_path + rospy.get_param('hand_file')
-        robot_file = self._package_path + rospy.get_param('robot_file')
+        hand_file = self._package_path + '/' + rospy.get_param('hand_file')
+        # robot_file = self._package_path + rospy.get_param('robot_file')
         free_space_weight = rospy.get_param('free_space_weight', default=0.5)
         connected_space_weight = rospy.get_param('connected_space_weight', default=4.0)
         use_approximates = rospy.get_param('use_approximates', default=True)
@@ -36,7 +37,7 @@ class HandlerClass(object):
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
         self._planner = IntegratedHFTSPlanner(env_file=env_file, b_visualize_system=b_visualize_system,
                                               b_visualize_grasps=b_visualize_grasps, b_visualize_hfts=b_visualize_hfts,
-                                              hand_file=hand_file, robot_file=robot_file,
+                                              hand_file=hand_file,
                                               min_iterations=min_iterations, max_iterations=max_iterations,
                                               free_space_weight=free_space_weight,
                                               connected_space_weight=connected_space_weight,
@@ -87,13 +88,19 @@ class HandlerClass(object):
     #     # In case of failure or shutdown return a response indicating failure.
     #     return PlanGraspResponse(False, PoseStamped(), JointState())
 
-    def handle_plan_request(self, object_name):
-        result = self._planner.plan(object_name)
-        IPython.embed()
-
+    def handle_plan_request(self, request):
+        # TODO wanna set the id as it is in the scene from somewhere else? I.e. not hardcoded
+        self._planner.load_object(obj_file_path=self._package_path + '/data', obj_id=request.object_identifier,
+                                  obj_id_scene='test_object')
+        # TODO read start configuration from request and transform to OpenRAVE configuration
+        result = self._planner.plan(9 * [0.0])
 
 if __name__ == "__main__":
     rospy.init_node('hfts_integrated_planner_node')
     handler = HandlerClass()
     s = rospy.Service('/hfts_planner/plan_fingertip_grasp_motion', PlanGraspMotion, handler.handle_plan_request)
-    rospy.spin()
+    # rospy.spin()
+    class DummyRequest:
+        object_identifier = 'bunny'
+    request = DummyRequest()
+    handler.handle_plan_request(request)
