@@ -906,7 +906,7 @@ class FreeSpaceProximitySampler(object):
         node.sampled()
         return hierarchyNode
 
-    def isGoal(self, sample):
+    def is_goal(self, sample):
         if sample.getId() >= 0:
             return True
         return False
@@ -984,7 +984,7 @@ class FreeSpaceProximitySampler(object):
 
         if self._debugDrawer is not None:
             self._debugDrawer.drawHierarchy(self._rootNode)
-        logging.debug('[FreeSpaceProximitySampler::sample] The search led to a dead end. Maybe there is' \
+        logging.debug('[FreeSpaceProximitySampler::sample] The search led to a dead end. Maybe there is ' \
                       + 'sth in our approximate cache!')
         if self._bReturnApproximates:
             return SampleData(self._pickRandomApproximate())

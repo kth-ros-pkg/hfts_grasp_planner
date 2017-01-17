@@ -13,32 +13,33 @@ from sampler import CSpaceSampler
 NUMERICAL_EPSILON = 0.00001
 MINIMAL_STEP_LENGTH = 0.001
 
-
 class GraspApproachConstraint(Constraint):
-    def __init__(self, orEnv, robot, stateSampler, objName, activationDistance=0.4):
+    def __init__(self, orEnv, robot, stateSampler, objName, open_hand_config, activationDistance=0.4):
         self.orEnv = orEnv
         self.robot = robot
+        self.manip = robot.GetActiveManipulator()
         self.dofIndices = robot.GetActiveDOFIndices()
+        self.open_hand_config = open_hand_config
         self.objName = objName
         self.activationDistance = activationDistance
         self.debug = False
         self.stateSampler = stateSampler
 
     def checkAABBIntersection(self, aabb1, aabb2):
-        bBoxesIntersect = True
-        mins1 = aabb1.pos() - aabb1.extents()
-        maxs1 = aabb1.pos() + aabb1.extents()
-        mins2 = aabb2.pos() - aabb2.extents()
-        maxs2 = aabb2.pos() + aabb2.extents()
+        b_boxes_intersect = True
+        mins_1 = aabb1.pos() - aabb1.extents()
+        maxs_1 = aabb1.pos() + aabb1.extents()
+        mins_2 = aabb2.pos() - aabb2.extents()
+        maxs_2 = aabb2.pos() + aabb2.extents()
         for i in range(3):
-            bBoxesIntersect = bBoxesIntersect and (mins1[i] <= maxs2[i] or mins2[i] <= maxs1[i])
-        return bBoxesIntersect
+            b_boxes_intersect = b_boxes_intersect and (mins_1[i] <= maxs_2[i] or mins_2[i] <= maxs_1[i])
+        return b_boxes_intersect
 
     def isActive(self, oldConfig, config):
         with self.orEnv:
             origValues = self.robot.GetDOFValues()
             self.robot.SetDOFValues(oldConfig)
-            eefPose = self.robot.GetEndEffectorTransform()
+            eefPose = self.manip.GetEndEffectorTransform()
             theObject = self.orEnv.GetKinBody(self.objName)
             objPose = theObject.GetTransform()
             distance = numpy.linalg.norm(eefPose[:3, 3] - objPose[:3, 3])
@@ -49,28 +50,35 @@ class GraspApproachConstraint(Constraint):
 
     def heuristicGradient(self, config):
         with self.orEnv:
-            oldValues = self.robot.GetDOFValues()
+            old_values = self.robot.GetDOFValues()
             # Set the old configuration
             self.robot.SetDOFValues(config)
             # First compute hand configuration gradient
-            oldHandConfig = self.robot.GetHandConfiguration()
-            self.robot.OpenHand(0.1)
-            handGradient = self.robot.GetHandConfiguration() - oldHandConfig
+            hand_dofs = self.manip.GetGripperIndices()
+            old_hand_config = self.robot.GetDOFValues(hand_dofs)
+            hand_open_dir = self.open_hand_config - old_hand_config
+            hand_open_dir_magn = numpy.linalg.norm(hand_open_dir)
+            # TODO we might wanna replace this with manip.GetClosingDirection
+            if hand_open_dir_magn > 0.0:
+                hand_open_dir = 1.0 / hand_open_dir_magn * hand_open_dir
+                hand_gradient = 0.1 * hand_open_dir
+            else:
+                hand_gradient = len(hand_dofs) * [0.0]
             # Now compute the arm configuration gradient
-            theObject = self.orEnv.GetKinBody(self.objName)
-            objPose = theObject.GetTransform()
-            eefPose = self.robot.GetEndEffectorTransform()
-            invApproachDir = eefPose[:3, 3] - objPose[:3, 3]
-            distance = numpy.linalg.norm(invApproachDir)
+            the_object = self.orEnv.GetKinBody(self.objName)
+            obj_pose = the_object.GetTransform()
+            eef_pose = self.manip.GetEndEffectorTransform()
+            inv_approach_dir = eef_pose[:3, 3] - obj_pose[:3, 3]
+            distance = numpy.linalg.norm(inv_approach_dir)
             if distance == 0.0:
-                self.robot.SetDOFValues(oldValues)
+                self.robot.SetDOFValues(old_values)
                 return None
-            invApproachDir = 1.0 / distance * invApproachDir
-            jacobian = self.robot.ComputeArmJacobian()
-            pseudoInverse = numpy.linalg.pinv(jacobian)
-            armGradient = numpy.dot(pseudoInverse, invApproachDir)
-            gradient = numpy.concatenate((armGradient, handGradient))
-            self.robot.SetDOFValues(oldValues)
+            inv_approach_dir = 1.0 / distance * inv_approach_dir
+            jacobian = self.manip.CalculateJacobian()
+            pseudo_inverse = numpy.linalg.pinv(jacobian)
+            arm_gradient = numpy.dot(pseudo_inverse, inv_approach_dir)
+            gradient = numpy.concatenate((arm_gradient, hand_gradient))
+            self.robot.SetDOFValues(old_values)
             return 1.0 / numpy.linalg.norm(gradient) * gradient
 
     def project(self, oldConfig, config):
@@ -92,13 +100,15 @@ class GraspApproachConstraint(Constraint):
             # logging.debug('[GraspApproachConstraint::project] Not active')
             return config
 
+
 class GraspApproachConstraintsManager(ConstraintsManager):
-    def __init__(self, or_env, robot, space_sampler):
+    def __init__(self, or_env, robot, space_sampler, open_hand_config):
         super(GraspApproachConstraintsManager, self).__init__()
         self.or_env = or_env
         self.or_robot = robot
         self.object_name = None
         self.space_sampler = space_sampler
+        self.open_hand_config = open_hand_config
 
     def set_object_name(self, object_name):
         self.object_name = object_name
@@ -109,7 +119,7 @@ class GraspApproachConstraintsManager(ConstraintsManager):
         if not tree._bForwardTree:
             # TODO: set activation distance based on object size
             new_constraints.append(GraspApproachConstraint(self.or_env, self.or_robot, self.space_sampler,
-                                                           self.object_name))
+                                                           self.object_name, self.open_hand_config))
         self._constraints_storage[tree.getId()] = new_constraints
 
 class RobotCSpaceSampler(CSpaceSampler):

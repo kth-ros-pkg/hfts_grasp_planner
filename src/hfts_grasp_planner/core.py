@@ -13,48 +13,69 @@ import rospy
 
 class PlanningSceneInterface(object):
 
-    def __init__(self, or_env, robot_name, manip_name, hand_dofs, arm_dofs):
+    def __init__(self, or_env, robot_name):
         """ Sets scene information for grasp planning that considers the whole robot.
-            @param or_scene OpenRAVE environment containing the whole planning scene and robot
-            @param obj_name Name of the target object in or_scene
+            @param or_env OpenRAVE environment containing the whole planning scene and robot
             @param robot_name Name of the robot on which the hand is attached (for ik computations)
         """
         self._or_env = or_env
         self._robot = or_env.GetRobot(robot_name)
-        self._manip = self._robot.GetManipulator(manip_name)
+        self._manip = self._robot.GetActiveManipulator()
         self._arm_ik = orpy.databases.inversekinematics.InverseKinematicsModel(self._robot,
                                                                                iktype=orpy.IkParameterization.Type.Transform6D)
-        self._hand_dofs = hand_dofs
-        self._arm_dofs = arm_dofs
+        # Make sure we have an ik solver
+        if not self._arm_ik.load():
+            rospy.loginfo('Not IKFast solution found. Computing new one...')
+            self._arm_ik.autogenerate()
         self._object = None
 
     def set_target_object(self, obj_name):
         self._object = self._or_env.GetKinBody(obj_name)
 
+    # # TODO this is a hack for the kwr (7DoFs -> need to sample 1 DoF)
+    # # TODO this should be done in a robot specific class
+    # def seven_dof_ik(self, pose, ik_options, max_iterations=2, free_joint_index=0):
+    #     sol = None
+    #     lower_limits, upper_limits = self._manip.GetRobot().GetDOFLimits()
+    #     min_v, max_v = lower_limits[free_joint_index], upper_limits[free_joint_index]
+    #     stride = (max_v - min_v) / 2.0
+    #     num_steps = 2
+    #     for i in range(max_iterations):
+    #         for j in range(1, num_steps, 2):
+    #             v = min_v + j * stride
+    #             self._robot.SetDOFValues([v], [free_joint_index])
+    #             sol = self._manip.FindIKSolution(pose, ik_options)
+    #             if sol is not None:
+    #                 extended_sol = [v]
+    #                 extended_sol.extend(sol)
+    #                 return extended_sol
+    #         num_steps *= 2
+    #         stride /= 2.0
+    #     return sol
+
     def check_arm_ik(self, hand_pose_object, grasp_conf, seed, open_hand_offset):
         with self._or_env:
-            # Make sure we have an ik solver
-            if not self._arm_ik.load():
-                rospy.loginfo('Not IKFast solution found. Computing new one...')
-                self._arm_ik.autogenerate()
-
             # compute target pose in world frame
             object_pose = self._object.GetTransform()
             hand_pose_scene = np.dot(object_pose, hand_pose_object)
             # save current state
             dof_values = self._robot.GetDOFValues()
             # if we have a seed set it
+            arm_dofs = self._manip.GetArmIndices()
+            hand_dofs = self._manip.GetGripperIndices()
             if seed is not None:
-                self._robot.SetDOFValues(seed, dofindices=self._arm_dofs)
+                self._robot.SetDOFValues(seed, dofindices=arm_dofs)
             # Compute a pre-grasp hand configuration and set it
             pre_grasp_conf = np.asarray(grasp_conf) - open_hand_offset
-            lower_limits, upper_limits = self._robot.GetDOFLimits(self._hand_dofs)
+            lower_limits, upper_limits = self._robot.GetDOFLimits(hand_dofs)
             pre_grasp_conf = np.asarray(clamp(pre_grasp_conf, lower_limits, upper_limits))
-            self._robot.SetDOFValues(pre_grasp_conf, dofindices=self._hand_dofs)
+            self._robot.SetDOFValues(pre_grasp_conf, dofindices=hand_dofs)
             # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
             sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
+            # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
             # If that didn't work, try to compute a solution the is in collision (may be useful anyways)
             if sol is None:
+                # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
                 sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
                 b_sol_col_free = False
             else:
@@ -271,11 +292,11 @@ class HFTSSampler:
             self.avoid_collision_at_fingers(n_step=20)
             open_hand_offset = 0.0
 
-        logging.debug('[HFTSSampler] We sampled a grasp on level ' + str(len(contact_label[0])))
+        logging.debug('[HFTSSampler::sample_grasp] We sampled a grasp on level ' + str(len(contact_label[0])))
         if is_goal_sample:
-            logging.debug('[HFTSSampler] We sampled a goal grasp (might be in collision)!')
+            logging.debug('[HFTSSampler::sample_grasp] We sampled a goal grasp (might be in collision)!')
         if is_leaf:
-            logging.debug('[HFTSSampler] We sampled a leaf')
+            logging.debug('[HFTSSampler::sample_grasp] We sampled a leaf')
 
         if grasp_conf is not None:
             grasp_pose = self._robot.GetTransform()
@@ -289,7 +310,7 @@ class HFTSSampler:
         depth = len(contact_label[0])
         possible_num_children, possible_num_leaves = self.get_branch_information(depth)
         return HFTSNode(labels=contact_label, hand_conf=grasp_conf,
-                        pre_grasp_conf=self._pre_gasp_conf, arm_conf=self._arm_conf,
+                        pre_grasp_conf=pre_grasp_conf, arm_conf=arm_conf,
                         is_goal=is_goal_sample, is_leaf=is_leaf, is_valid=collision_free_arm_ik,
                         num_possible_children=possible_num_children, num_possible_leaves=possible_num_leaves,
                         hand_transform= self._robot.GetTransform())
@@ -322,7 +343,7 @@ class HFTSSampler:
             p, n = self.cluster_repr(contact_labels[i])
             contacts.append(list(p) + list(n))
         # TODO make this to a non-object-global variable
-        self._grasp_contacts= np.asarray(contacts)
+        self._grasp_contacts = np.asarray(contacts)
         code_tmp = self._hand_manifold.encodeGrasp(self._grasp_contacts)
         dummy, grasp_conf  = self._hand_manifold.predictHandConf(code_tmp)
         grasp_pose = self._robot.getOriTipPN(grasp_conf)
@@ -538,5 +559,6 @@ class HFTSNode:
     def get_num_possible_leaves(self):
         return self._num_possible_leaves
     
-
+    def get_quality(self):
+        return self._quality
 

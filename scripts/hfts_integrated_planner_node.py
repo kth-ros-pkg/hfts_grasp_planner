@@ -1,8 +1,11 @@
 #! /usr/bin/python
 
 import IPython
+import sys
 import rospy
+import rosgraph.roslogging
 import rospkg
+import logging
 from hfts_grasp_planner.srv import PlanGraspMotion, PlanGraspMotionRequest, PlanGraspMotionResponse
 from hfts_grasp_planner.integrated_hfts_planner import IntegratedHFTSPlanner
 
@@ -29,19 +32,24 @@ class HandlerClass(object):
         min_iterations = rospy.get_param('min_iterations', default=20)
         max_iterations = rospy.get_param('max_iterations', default=70)
         hand_file = self._package_path + '/' + rospy.get_param('hand_file')
+        robot_name = rospy.get_param('robot_name')
+        manip_name = rospy.get_param('manipulator_name')
         # robot_file = self._package_path + rospy.get_param('robot_file')
         free_space_weight = rospy.get_param('free_space_weight', default=0.5)
         connected_space_weight = rospy.get_param('connected_space_weight', default=4.0)
         use_approximates = rospy.get_param('use_approximates', default=True)
+        time_limit = rospy.get_param('time_limit', default=60.0)
         # Make sure we do not visualize grasps and the system at the same time (only one OR viewer)
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
-        self._planner = IntegratedHFTSPlanner(env_file=env_file, b_visualize_system=b_visualize_system,
+        self._planner = IntegratedHFTSPlanner(env_file=env_file, robot_name=robot_name, manipulator_name=manip_name,
+                                              b_visualize_system=b_visualize_system,
                                               b_visualize_grasps=b_visualize_grasps, b_visualize_hfts=b_visualize_hfts,
                                               hand_file=hand_file,
                                               min_iterations=min_iterations, max_iterations=max_iterations,
                                               free_space_weight=free_space_weight,
                                               connected_space_weight=connected_space_weight,
-                                              use_approximates=use_approximates)
+                                              use_approximates=use_approximates,
+                                              time_limit=time_limit)
 
     # def handle_plan_request(self, req):
     #     """ Callback function for a grasp planning servce request. """
@@ -93,10 +101,17 @@ class HandlerClass(object):
         self._planner.load_object(obj_file_path=self._package_path + '/data', obj_id=request.object_identifier,
                                   obj_id_scene='test_object')
         # TODO read start configuration from request and transform to OpenRAVE configuration
-        result = self._planner.plan(9 * [0.0])
+        start_config = 9 * [0.0]
+        start_config[-1] = 1.0
+        result = self._planner.plan(start_config)
 
 if __name__ == "__main__":
-    rospy.init_node('hfts_integrated_planner_node')
+    rospy.init_node('hfts_integrated_planner_node', log_level=rospy.DEBUG)
+    # reconnect logging calls to ros log system
+    logging.getLogger().addHandler(rosgraph.roslogging.RosStreamHandler())
+    # logs sent to children of trigger with a level >= this will be redirected to ROS
+    logging.getLogger().setLevel(logging.DEBUG)
+    # Build handler
     handler = HandlerClass()
     s = rospy.Service('/hfts_planner/plan_fingertip_grasp_motion', PlanGraspMotion, handler.handle_plan_request)
     # rospy.spin()
@@ -104,3 +119,5 @@ if __name__ == "__main__":
         object_identifier = 'bunny'
     request = DummyRequest()
     handler.handle_plan_request(request)
+    print 'Execution finished'
+    sys.exit(0)

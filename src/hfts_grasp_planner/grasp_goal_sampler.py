@@ -51,7 +51,7 @@ class GraspGoalSampler:
                                                        open_hand_offset=self.open_hand_offset)
         config = sampled_node.get_arm_configuration()
         if config is not None:
-            config = numpy.concatenate((config, sampled_node.getPreGraspHandConfig()))
+            config = numpy.concatenate((config, sampled_node.get_pre_grasp_config()))
         return SamplingResult(configuration=config, hierarchyInfo=sampled_node, dataExtractor=HFTSNodeDataExtractor())
 
     def is_goal(self, sampling_result):
