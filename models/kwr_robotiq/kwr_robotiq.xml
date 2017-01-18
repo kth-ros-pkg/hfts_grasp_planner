@@ -4,8 +4,8 @@
     <kinbody>
         <body name="hand_palm">
             <offsetfrom>iiwa.link7</offsetfrom>
-            <translation>0.0 0.0 0.09</translation>
-            <rotationaxis>1 0 0 -90</rotationaxis>
+            <translation>0.0 0.0 0.05</translation>
+            <!--<rotationaxis>1 0 0 -90</rotationaxis>-->
         </body>
         <joint name="iiwa_robotiq_dummy_joint" type="hinge" enable="false">
             <body>iiwa.link7</body>
@@ -15,7 +15,7 @@
     </kinbody>
     <manipulator name="arm_with_robotiq">
         <base>kmr_iiwa.base</base>
-        <effector>iiwa.link7</effector>
+        <effector>hand_robotiq_socket</effector>
         <joints>hand_JF20 hand_JF2V</joints>
         <closingdirection>1 1</closingdirection>
         <direction>1 0 0</direction>

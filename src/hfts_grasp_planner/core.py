@@ -153,9 +153,10 @@ class HFTSSampler:
             #TODO Think about what we should do in this case (planning with free-floating hand)
             return True, None, None
         object_hfts_pose = self._obj.GetTransform()  # pose in environment used for contact planning
-        hand_pose_object = np.dot(np.linalg.inv(object_hfts_pose), grasp_pose)
+        hand_pose_object_frame = np.dot(np.linalg.inv(object_hfts_pose), grasp_pose)
+        # hand_pose_world = np.dot(object_hfts_pose, grasp_pose)
         collision_free, arm_conf, pre_grasp_conf = \
-            self._scene_interface.check_arm_ik(hand_pose_object,
+            self._scene_interface.check_arm_ik(hand_pose_object_frame,
                                                grasp_conf,
                                                seed=seed,
                                                open_hand_offset=open_hand_offset)
@@ -306,6 +307,8 @@ class HFTSSampler:
                                               seed=seed_ik, open_hand_offset=open_hand_offset)
         else:
             collision_free_arm_ik = False
+            arm_conf = None
+            pre_grasp_conf = None
 
         depth = len(contact_label[0])
         possible_num_children, possible_num_leaves = self.get_branch_information(depth)

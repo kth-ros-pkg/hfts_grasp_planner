@@ -1,8 +1,14 @@
 <Robot name="Robotiq-S-Hand">
     <KinBody>
+        <Body name="robotiq_socket" type="dynamic">
+                <Translation>0 0 0</Translation>
+                <quat> 1 0 0 0 </quat>
+        </Body>
         <Body name="palm" type="dynamic">
-            <Translation> 0 0 0</Translation>
-            <quat>0 0 0 1</quat>
+            <!-- <offsetfrom>robotiq_socket</offsetfrom> -->
+            <Translation> 0 0 0.046</Translation>
+            <!-- <quat>0.7071 0.7071 0 0</quat> -->
+            <quat>0.0 0.0 0.7071 0.7071</quat>
             <Geom type="trimesh">
                 <render>meshes/visual/palm.dae</render>
                 <!-- <collision>meshes/collision/palm.dae</collision> -->
@@ -156,6 +162,12 @@
                 <quat>0.96639 0.00000 0.00000 0.25708</quat>
             </Geom>
         </Body>
+        <!-- =========== Dummy Joint between socket and palm ========== -->
+        <Joint name="root_joint" type="hinge" enable="false">
+            <Body>robotiq_socket</Body>
+            <Body>palm</Body>
+            <limits>0.0 0.0</limits>
+        </Joint>
         <!-- ==================== Finger 1 Joints ==================== -->
         <Joint name="JF10" type="hinge" enable="false"
             mimic_pos="-JF20" mimic_vel="-|JF20 1">

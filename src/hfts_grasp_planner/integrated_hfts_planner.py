@@ -67,8 +67,9 @@ class IntegratedHFTSPlanner(object):
                                                  returnApproximates=use_approximates,
                                                  connectedWeight=connected_space_weight,
                                                  freeSpaceWeight=free_space_weight)
+        # TODO the open hand configuration should be given from a configuration file
         self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot,
-                                                                    self._cSampler, numpy.array([0.0, 0.0]))
+                                                                    self._cSampler, numpy.array([0.0, 0.0495]))
         p_goal_provider = DynamicPGoalProvider()
         # TODO think about how to make ROS logger run with this
         self._rrt_planner = RRT(p_goal_provider, self._cSampler, goal_sampler, logging.getLogger(),
@@ -87,4 +88,7 @@ class IntegratedHFTSPlanner(object):
         # TODO remove the following two lines again
         # body = self._env.GetKinBody('test_object')
         # body.Enable(False)
-        return self._rrt_planner.proximityBiRRT(start_configuration, timeLimit=self._time_limit)
+        path = self._rrt_planner.proximityBiRRT(start_configuration, timeLimit=self._time_limit)
+        import IPython
+        IPython.embed()
+        return path
