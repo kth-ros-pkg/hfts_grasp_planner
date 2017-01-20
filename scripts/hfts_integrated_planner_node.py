@@ -116,7 +116,7 @@ if __name__ == "__main__":
     s = rospy.Service('/hfts_planner/plan_fingertip_grasp_motion', PlanGraspMotion, handler.handle_plan_request)
     # rospy.spin()
     class DummyRequest:
-        object_identifier = 'bunny'
+        object_identifier = 'crayola'
     request = DummyRequest()
     handler.handle_plan_request(request)
     print 'Execution finished'

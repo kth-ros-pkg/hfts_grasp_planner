@@ -1,3 +1,5 @@
+import string
+
 import openravepy as orpy
 import logging
 import numpy
@@ -75,6 +77,7 @@ class IntegratedHFTSPlanner(object):
         self._rrt_planner = RRT(p_goal_provider, self._cSampler, goal_sampler, logging.getLogger(),
                                 pGoalTree=p_goal_tree, constraintsManager=self._constraints_manager)
         self._time_limit = time_limit
+        self._last_path = None
 
     def load_object(self, obj_file_path, obj_id, obj_id_scene=None):
         if obj_id_scene is None:
@@ -84,11 +87,39 @@ class IntegratedHFTSPlanner(object):
         self._constraints_manager.set_object_name(obj_name)
         self._grasp_planner.set_object(obj_path=obj_file_path, obj_id=obj_id, obj_id_scene=obj_id_scene)
 
+    def create_or_trajectory(self, path, vel_factor=0.02):
+        configurations_path = map(lambda x: x.getConfiguration(), path)
+        # The path ends in a pre-grasp configuration.
+        # The final grasp configuration is stored as additional data in the last waypoint,
+        # so we need to construct the final configuration here.
+        grasp_hand_config = path[-1].getData()
+        last_config = numpy.array(configurations_path[-1])
+        hand_idxs = self._robot.GetActiveManipulator().GetGripperIndices()
+        assert len(hand_idxs) == len(grasp_hand_config)
+        j = 0
+        for i in hand_idxs:
+            last_config[i] = grasp_hand_config[j]
+            j += 1
+        configurations_path.append(last_config)
+
+        vel_limits = self._robot.GetDOFVelocityLimits()
+        self._robot.SetDOFVelocityLimits(vel_factor * vel_limits)
+        traj = orpy.RaveCreateTrajectory(self._env, '')
+        cs = traj.GetConfigurationSpecification()
+        dof_string = string.join([' ' + str(x) for x in range(self._robot.GetDOF())])
+        cs.AddGroup('joint_values ' + self._robot.GetName() + dof_string, self._robot.GetDOF(), 'linear')
+        # cs.AddDerivativeGroups(1, True)
+        traj.Init(cs)
+        for idx in range(len(configurations_path)):
+            traj.Insert(idx, configurations_path[idx])
+        orpy.planningutils.RetimeTrajectory(traj, hastimestamps=False)
+        self._robot.SetDOFVelocityLimits(vel_limits)
+        return traj
+
     def plan(self, start_configuration):
-        # TODO remove the following two lines again
-        # body = self._env.GetKinBody('test_object')
-        # body.Enable(False)
-        path = self._rrt_planner.proximityBiRRT(start_configuration, timeLimit=self._time_limit)
+        self._last_path = self._rrt_planner.proximityBiRRT(start_configuration, timeLimit=self._time_limit)
+        self._last_traj = self.create_or_trajectory(self._last_path)
+        self._robot.SetDOFValues(self._last_path[-1].getConfiguration())
         import IPython
         IPython.embed()
-        return path
+        return self._last_path

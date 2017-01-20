@@ -676,13 +676,9 @@ class FreeSpaceProximitySampler(object):
         self._goalLabels = []
         self._rootNode = FreeSpaceProximityHierarchyNode(goalNode=self._goalHierarchy.get_root(),
                                                          initialTemp=self._freeSpaceWeight)
+        self._numIterations = self._goalHierarchy.get_max_depth() * [self._numIterations[0]]
         if self._debugDrawer is not None:
             self._debugDrawer.clear()
-
-    def object_reloaded(self):
-        self.clear()
-        self._numIterations = self._goalHierarchy.get_max_depth() * [self._numIterations[0]]
-
 
     def getNumGoalNodesSampled(self):
         return len(self._labelCache)

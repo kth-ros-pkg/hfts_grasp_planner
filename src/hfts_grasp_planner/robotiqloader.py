@@ -72,7 +72,7 @@ class RobotiqHand:
     
     def getNonFingertipLinks(self):
         return ['palm', 'finger_1_link_0', 'finger_1_link_2',
-                'finger_2_link_0', 'finger_2_link_1', 'finger_2_link_v',
+                'finger_2_link_0', 'finger_2_link_1', 'finger_2_link_2',
                 'finger_middle_link_0', 'finger_middle_link_1', 'finger_middle_link_2']
     
     def getTipPN(self):

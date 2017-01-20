@@ -232,7 +232,7 @@ class HFTSSampler:
             best_o = -np.inf  # need to also consider non-root nodes
         else:
             # If we are not at a leaf node, go down in the hierarchy
-            seed_ik = node.getArmConfig()
+            seed_ik = node.get_arm_configuration()
             contact_label = copy.deepcopy(node.get_labels())
             best_o, contact_label = self.extend_hfts_node(contact_label)
 
@@ -316,7 +316,7 @@ class HFTSSampler:
                         pre_grasp_conf=pre_grasp_conf, arm_conf=arm_conf,
                         is_goal=is_goal_sample, is_leaf=is_leaf, is_valid=collision_free_arm_ik,
                         num_possible_children=possible_num_children, num_possible_leaves=possible_num_leaves,
-                        hand_transform= self._robot.GetTransform())
+                        hand_transform=self._robot.GetTransform())
 
     def simulate_grasp(self, grasp_conf, fingertip_poses, post_opt=False):
         # TODO this method as it is right now is only useful for the Robotiq hand.
