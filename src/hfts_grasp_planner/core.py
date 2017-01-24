@@ -86,7 +86,6 @@ class PlanningSceneInterface(object):
 
 
 class HFTSSampler:
-
     def __init__(self, scene_interface=None, verbose=False, num_hops=2, vis=False):
         self._verbose = verbose
         self._sampler_viewer = vis
@@ -168,7 +167,7 @@ class HFTSSampler:
     def load_hand(self, hand_file):
         if not self._hand_loaded:
             # TODO make this Robotiq hand independent (external hand loader)
-            self._robot = RobotiqHand(env = self._orEnv, handFile = hand_file)
+            self._robot = RobotiqHand(env=self._orEnv, handFile=hand_file)
             self._hand_manifold = self._robot.getHandMani()
             self._num_contacts = self._robot.getContactNumber()
             shift = transformations.identity_matrix()
@@ -183,6 +182,10 @@ class HFTSSampler:
         object_io = ObjectFileIO(data_path, model_id)
         self._data_labeled, self._branching_factors = object_io.getHFTS()
         self._num_levels = len(self._branching_factors)
+        # Before loading the object, run through all kinbodies in the scene and remove old ones
+        for body in self._orEnv.GetBodies():
+            if body.GetName() != self._robot.GetName():
+                self._orEnv.Remove(body)
         self._obj_loaded = self._orEnv.Load(data_path + '/' + model_id + '/objectModel' + object_io.getObjFileExtension())
         self._obj = self._orEnv.GetKinBody('objectModel')
         self._obj_com = object_io.getObjCOM()
@@ -252,8 +255,8 @@ class HFTSSampler:
         while depth_limit >= 0:
             # do stochastic optimization until depth_limit is reached
             for iter_now in range(self._max_iters):
-                labels_tmp = self.get_sibling_labels(curr_labels=contact_label,
-                                                     allowed_finger_combos=allowed_finger_combos)
+                labels_tmp = self.get_random_sibling_labels(curr_labels=contact_label,
+                                                            allowed_finger_combos=allowed_finger_combos)
                 s_tmp, r_tmp, o_tmp = self.evaluate_grasp(labels_tmp)
 
                 if self.shc_evaluation(o_tmp, best_o):
@@ -270,8 +273,6 @@ class HFTSSampler:
             rospy.logdebug('[HFTSSampler::sample_grasp] Doing post optimization for node %s' % str(contact_label))
         # Compute grasp quality (a combination of stability, reachability and collision conditions)
         try:
-            # sample_q, stability = self.simulate_grasp(grasp_conf=grasp_conf, grasp_pose=grasp_pose,
-            #                                           post_opt=post_opt)
             b_robotiq_ok = self.simulate_grasp(grasp_conf=grasp_conf, fingertip_poses=fingertip_poses,
                                                post_opt=post_opt)
             if b_robotiq_ok:
@@ -400,7 +401,7 @@ class HFTSSampler:
         # p = 1. / (1 + exp(v))
         # return  p > np.random.uniform()
 
-    def get_sibling_label(self, label):
+    def get_random_sibling_label(self, label):
         ret = []
         if len(label) <= self._hops / 2:
             for i in range(len(label)):
@@ -412,7 +413,7 @@ class HFTSSampler:
                 ret.append(np.random.randint(self._branching_factors[i + match_len]))
         return ret
 
-    def get_sibling_labels(self, curr_labels, allowed_finger_combos=None):
+    def get_random_sibling_labels(self, curr_labels, allowed_finger_combos=None):
         labels_tmp = []
         if allowed_finger_combos is None:
             for i in range(self._num_contacts):
@@ -420,7 +421,7 @@ class HFTSSampler:
                 # while tmp in labels_tmp or len(tmp) == 0:
                 # TODO what is this loop for? we would never get this result from get_sibling_label
                 while len(tmp) == 0:
-                    tmp = self.get_sibling_label(curr_labels[i])
+                    tmp = self.get_random_sibling_label(curr_labels[i])
                 labels_tmp.append(tmp)
         else:
             finger_combo = random.choice(allowed_finger_combos)

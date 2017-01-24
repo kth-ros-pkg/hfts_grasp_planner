@@ -3,7 +3,7 @@
 import rospy
 import rospkg
 from hfts_grasp_planner.utils import *
-from hfts_grasp_planner.core import graspSampler, HFTSNode
+from hfts_grasp_planner.core import HFTSSampler, HFTSNode
 from hfts_grasp_planner.srv import PlanGrasp, PlanGraspRequest, PlanGraspResponse
 from geometry_msgs.msg import PoseStamped, Pose
 from sensor_msgs.msg import JointState
@@ -23,7 +23,7 @@ class HandlerClass(object):
         self._package_path = rospack.get_path(PACKAGE_NAME)
         # Create planner
         b_visualize = rospy.get_param('visualize', default=False)
-        self._planner = graspSampler(vis=b_visualize)
+        self._planner = HFTSSampler(num_hops=4, vis=b_visualize)
         # Load hand and save joint names
         hand_file = self._package_path + rospy.get_param('handFile')
         self._planner.load_hand(hand_file)
@@ -45,7 +45,9 @@ class HandlerClass(object):
         iteration = 0
         # Iterate until either shutdown, max_iterations reached or a good grasp was found
         while iteration < max_iterations and not rospy.is_shutdown():
-            return_node = self._planner.sample_grasp(root_hfts_node, 30)
+            return_node = self._planner.sample_grasp(root_hfts_node,
+                                                     self._planner.get_maximum_depth(),
+                                                     post_opt=True)
             if return_node.is_goal():
                 grasp_pose = return_node.get_hand_transform()
                 pose_quaternion = tff.quaternion_from_matrix(grasp_pose)
