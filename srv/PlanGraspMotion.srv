@@ -1,9 +1,16 @@
 # Request
 # A unique identifier for the object to grasp.
 string object_identifier
+# (Optional) While the object_identifier should be a unique identifier for the object,
+#            a geometric model of the object may be stored under a different name.
+#            A scene may contain multiple instances of the same box-shaped object.
+#            While all these boxes share the same geometric model, the unique identifiers
+#            are different. Hence, in order not to save the same model for each identifier,
+#            you may provide a model identifier here that is the same for all objects of the same type.
+string model_identifier
 # (Optional) A point cloud representing the shape of the object to grasp.
 #            If not provided, the node attempts to retrieve shape information
-#            from an internal database using the object_identifier.
+#            from an internal database using the object_identifier or the object_model_identifier.
 sensor_msgs/PointCloud point_cloud
 # (Optional) The start configuration of the arm and the hand.
 #            If not provided, the current configuration is used as start configuration.

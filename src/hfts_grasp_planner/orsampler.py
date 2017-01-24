@@ -168,8 +168,6 @@ class RobotCSpaceSampler(CSpaceSampler):
                 self.robot.SetActiveDOFValues(qcheck)
                 # Do collision tests
                 inCollision = self.orEnv.CheckCollision(self.robot) or self.robot.CheckSelfCollision()
-                # TODO: this function doesn't exist for real openRave robots
-                # inCollision = self.robot.CheckCollision()
                 # Restore previous state
                 self.robot.SetActiveDOFs(activeIndices)
                 self.robot.SetJointValues(origValues)

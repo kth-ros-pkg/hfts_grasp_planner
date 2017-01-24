@@ -17,7 +17,7 @@ class IntegratedHFTSPlanner(object):
                  min_iterations=20, max_iterations=70, p_goal_tree=0.8,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
                  free_space_weight=0.1, connected_space_weight=4.0, use_approximates=True,
-                 time_limit=60.0):
+                 compute_velocities=True, time_limit=60.0):
         """ Creates a new instance of an HFTS planner
             NOTE: It is only possible to display one scene in OpenRAVE at a time. Hence, if the parameters
             b_visualize_system and b_visualize_grasps are both true, only the motion planning scene is shown.
@@ -42,6 +42,7 @@ class IntegratedHFTSPlanner(object):
             connected configurations
          @param use_approximates Boolean, if True, the grasp sampler returns approximate grasps if it hasn't
             found a valid grasp yet
+         @param use_velocities Boolean, if True, compute a whole trajectory (with velocities), else just a path
          @param time_limit Runtime limit for the algorithm in seconds (float)
          """
         self._env = orpy.Environment()
@@ -78,16 +79,18 @@ class IntegratedHFTSPlanner(object):
                                 pGoalTree=p_goal_tree, constraintsManager=self._constraints_manager)
         self._time_limit = time_limit
         self._last_path = None
+        self._compute_velocities = compute_velocities
 
-    def load_object(self, obj_file_path, obj_id, obj_id_scene=None):
-        if obj_id_scene is None:
-            obj_name = obj_id
-        else:
-            obj_name = obj_id_scene
-        self._constraints_manager.set_object_name(obj_name)
-        self._grasp_planner.set_object(obj_path=obj_file_path, obj_id=obj_id, obj_id_scene=obj_id_scene)
+    def load_object(self, obj_file_path, obj_id, model_id=None):
+        self._constraints_manager.set_object_name(obj_id)
+        self._grasp_planner.set_object(obj_path=obj_file_path, obj_id=obj_id, model_id=model_id)
+
+    def get_robot(self):
+        return self._robot
 
     def create_or_trajectory(self, path, vel_factor=0.02):
+        if path is None:
+            return None
         configurations_path = map(lambda x: x.getConfiguration(), path)
         # The path ends in a pre-grasp configuration.
         # The final grasp configuration is stored as additional data in the last waypoint,
@@ -118,8 +121,21 @@ class IntegratedHFTSPlanner(object):
 
     def plan(self, start_configuration):
         self._last_path = self._rrt_planner.proximityBiRRT(start_configuration, timeLimit=self._time_limit)
-        self._last_traj = self.create_or_trajectory(self._last_path)
-        self._robot.SetDOFValues(self._last_path[-1].getConfiguration())
-        import IPython
-        IPython.embed()
+        if self._compute_velocities:
+            self._last_traj = self.create_or_trajectory(self._last_path)
+            return self._last_traj
+        # self._robot.SetDOFValues(self._last_path[-1].getConfiguration())
+        # import IPython
+        # IPython.embed()
         return self._last_path
+
+    def set_parameters(self, min_iterations=None, max_iterations=None,
+                       free_space_weight=None, connected_space_weight=None,
+                       use_approximates=None, compute_velocities=None,
+                       time_limit=None):
+        if time_limit is not None:
+            self._time_limit = time_limit
+        if compute_velocities is not None:
+            self._compute_velocities = compute_velocities
+        # TODO implement the rest
+

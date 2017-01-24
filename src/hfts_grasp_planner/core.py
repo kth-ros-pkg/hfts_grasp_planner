@@ -177,19 +177,18 @@ class HFTSSampler:
             rospy.loginfo('Hand loaded in OpenRAVE environment')
             self._hand_loaded = True
 
-    def load_object(self, data_path, obj_id, obj_id_scene=None):
-        object_io = ObjectFileIO(data_path, obj_id)
+    def load_object(self, data_path, obj_id, model_id=None):
+        if model_id is None:
+            model_id = obj_id
+        object_io = ObjectFileIO(data_path, model_id)
         self._data_labeled, self._branching_factors = object_io.getHFTS()
         self._num_levels = len(self._branching_factors)
-        self._obj_loaded = self._orEnv.Load(data_path + '/' + obj_id + '/objectModel' + object_io.getObjFileExtension())
+        self._obj_loaded = self._orEnv.Load(data_path + '/' + model_id + '/objectModel' + object_io.getObjFileExtension())
         self._obj = self._orEnv.GetKinBody('objectModel')
         self._obj_com = object_io.getObjCOM()
         rospy.loginfo('Object loaded in OpenRAVE environment')
         if self._scene_interface is not None:
-            if obj_id_scene is not None:
-                self._scene_interface.set_target_object(obj_id_scene)
-            else:
-                self._scene_interface.set_target_object(obj_id)
+            self._scene_interface.set_target_object(obj_id)
         self.compute_contact_combinations()
         self._obj_loaded = True
 

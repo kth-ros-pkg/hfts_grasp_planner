@@ -22,6 +22,7 @@
   <!--   <test_depend>gtest</test_depend> -->
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>roscpp</build_depend>
+  <build_depend>dynamic_reconfigure</build_depend>
   <build_depend>message_generation</build_depend>
   <build_depend>rospy</build_depend>
   <build_depend>std_msgs</build_depend>
@@ -36,6 +37,7 @@
   <run_depend>trajectory_msgs</run_depend>
   <run_depend>message_runtime</run_depend>
   <run_depend>python-yaml</run_depend>
+  <run_depend>dynamic-reconfigure</run_depend>
   <run_depend>python-numpy</run_depend>
   <run_depend>python-sklearn</run_depend>
   <run_depend>OpenRAVE</run_depend>

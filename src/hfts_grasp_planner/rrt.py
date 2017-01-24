@@ -618,6 +618,9 @@ class RRT:
                        shortcutTime=5.0, timerFunction=time.time):
         """ Bidirectional RRT algorithm with hierarchical goal region that
             uses free space proximity to bias sampling. """
+        if not self.cfreeSampler.isValid(startConfig):
+            self.logger.info('[RRT::proximityBiRRT] Start configuration is invalid. Aborting.')
+            return None
         from sampler import FreeSpaceProximitySampler, FreeSpaceModel, ExtendedFreeSpaceModel
         assert type(self.goalSampler) == FreeSpaceProximitySampler
         self.goalSampler.clear()

@@ -62,14 +62,13 @@ class GraspGoalSampler:
         """ Reset the hand being used. @see __init__ for parameter description. """
         self.grasp_planner.load_hand(hand_file=hand_path)
 
-    def set_object(self, obj_path, obj_id, obj_id_scene=None):
+    def set_object(self, obj_path, obj_id, model_id=None):
         """ Set the object.
             @param obj_path String containing the path to object file.
             @param obj_id String identifying the object.
-            @param obj_id_scene (optional) String identifying the object in the scene
-                (provide if different from obj_id)
+            @param model_id (optional) Name of the model data. If None, it is assumed to be identical to obj_id
         """
-        self.grasp_planner.load_object(data_path=obj_path, obj_id=obj_id, obj_id_scene=obj_id_scene)
+        self.grasp_planner.load_object(data_path=obj_path, obj_id=obj_id, model_id=model_id)
         self.root_node = self.grasp_planner.get_root_node()
 
     def set_max_iter(self, iterations):

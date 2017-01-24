@@ -1,5 +1,5 @@
-visualize_grasps: True
-visualize_system: False
+visualize_grasps: False
+visualize_system: True
 visualize_hfts: False
 p_goal_max: 0.8
 p_goal_w: 1.2
