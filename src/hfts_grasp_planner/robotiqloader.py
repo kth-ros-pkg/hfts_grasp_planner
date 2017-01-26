@@ -1,7 +1,7 @@
 import numpy as np
 import transformations
 import math
-from utils import vecAngelDiff
+from utils import vec_angel_diff
 
 
 # TODO this should be defined in a super module
@@ -232,9 +232,9 @@ class RobotiqHandVirtualMainfold:
         d01 = np.linalg.norm(v01)
         d2c = np.linalg.norm(v2c)
         
-        aDiff01 = vecAngelDiff(grasp[0, 3:], grasp[1, 3:])
+        aDiff01 = vec_angel_diff(grasp[0, 3:], grasp[1, 3:])
         avgN01 = (grasp[0, 3:] + grasp[1, 3:]) / 2.
-        aDiff2A = vecAngelDiff(grasp[2, 3:], -avgN01)
+        aDiff2A = vec_angel_diff(grasp[2, 3:], -avgN01)
         
         return [d01, d2c, aDiff01, aDiff2A]
 

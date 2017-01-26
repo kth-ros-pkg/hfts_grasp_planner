@@ -6,6 +6,7 @@ import numpy
 from orsampler import RobotCSpaceSampler, GraspApproachConstraintsManager
 from sampler import FreeSpaceProximitySampler
 from rrt import DynamicPGoalProvider, RRT
+from utils import OpenRAVEDrawer
 from grasp_goal_sampler import GraspGoalSampler
 from core import PlanningSceneInterface
 from hierarchy_visualization import FreeSpaceProximitySamplerVisualizer
@@ -17,7 +18,7 @@ class IntegratedHFTSPlanner(object):
                  dof_weights=None, num_hfts_sampling_steps=4,
                  min_iterations=20, max_iterations=70, p_goal_tree=0.8,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
-                 b_show_traj=False, free_space_weight=0.1, connected_space_weight=4.0,
+                 b_show_traj=False, b_show_search_tree=False, free_space_weight=0.1, connected_space_weight=4.0,
                  use_approximates=True, compute_velocities=True, time_limit=60.0):
         """ Creates a new instance of an HFTS planner
             NOTE: It is only possible to display one scene in OpenRAVE at a time. Hence, if the parameters
@@ -38,6 +39,7 @@ class IntegratedHFTSPlanner(object):
          @param b_visualize_grasps Boolean, if True, show OpenRAVE viewer displaying the grasp planning scene
          @param b_visualize_hfts Boolean, if True, show a window with a graph visualization of the explored HFTS space
          @param b_show_traj Boolean, if True, simulates the trajectory execution in OpenRAVE before returning
+         @param b_show_search_tree Boolean, if True, visualizes a projection of the search trees in OpenRAVE
          @param free_space_weight Weight (float) for HFTS rating function t(n) for the distance to
             free space configurations
          @param connected_space_weight Weight (float) for HFTS rating function t(n) for the distance to
@@ -77,7 +79,9 @@ class IntegratedHFTSPlanner(object):
         self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot,
                                                                     self._cSampler, numpy.array([0.0, 0.0495]))
         p_goal_provider = DynamicPGoalProvider()
-        # TODO think about how to make ROS logger run with this
+        self._debug_tree_drawer = None
+        if b_show_search_tree:
+            self._debug_tree_drawer = OpenRAVEDrawer(self._env, self._robot, True)
         self._rrt_planner = RRT(p_goal_provider, self._cSampler, goal_sampler, logging.getLogger(),
                                 pgoal_tree=p_goal_tree, constraints_manager=self._constraints_manager)
         self._time_limit = time_limit
@@ -124,7 +128,14 @@ class IntegratedHFTSPlanner(object):
         return traj
 
     def plan(self, start_configuration):
-        self._last_path = self._rrt_planner.proximity_birrt(start_configuration, time_limit=self._time_limit)
+        if self._debug_tree_drawer is not None:
+            self._debug_tree_drawer.clear()
+            debug_function = self._debug_tree_drawer.draw_trees
+        else:
+            def debug_function(forward_tree, backward_trees):
+                pass
+        self._last_path = self._rrt_planner.proximity_birrt(start_configuration, time_limit=self._time_limit,
+                                                            debug_function=debug_function)
         if self._compute_velocities:
             self._last_traj = self.create_or_trajectory(self._last_path)
             if self._b_show_trajectory and self._last_traj is not None:

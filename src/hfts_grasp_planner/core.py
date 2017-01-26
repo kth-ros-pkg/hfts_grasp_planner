@@ -180,16 +180,16 @@ class HFTSSampler:
         if model_id is None:
             model_id = obj_id
         object_io = ObjectFileIO(data_path, model_id)
-        self._data_labeled, self._branching_factors = object_io.getHFTS()
+        self._data_labeled, self._branching_factors = object_io.get_hfts()
         self._num_levels = len(self._branching_factors)
         # First, delete old object if there is any
         if self._obj_loaded:
             self._orEnv.Remove(self._obj)
-        self._obj_loaded = self._orEnv.Load(data_path + '/' + model_id + '/objectModel' + object_io.getObjFileExtension())
+        self._obj_loaded = self._orEnv.Load(data_path + '/' + model_id + '/objectModel' + object_io.get_obj_file_extension())
         if not self._obj_loaded:
             raise RuntimeError('Could not load object model %s at location %s' % (model_id, data_path))
         self._obj = self._orEnv.GetKinBody('objectModel')
-        self._obj_com = object_io.getObjCOM()
+        self._obj_com = object_io.get_obj_com()
         rospy.loginfo('Object loaded in OpenRAVE environment')
         if self._scene_interface is not None:
             self._scene_interface.set_target_object(obj_id)

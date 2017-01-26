@@ -36,6 +36,7 @@ class HandlerClass(object):
         b_visualize_system = rospy.get_param('visualize_system', default=False)
         b_visualize_hfts = rospy.get_param('visualize_hfts', default=False)
         b_show_traj = rospy.get_param('show_trajectory', default=False)
+        b_show_search_tree = rospy.get_param('show_search_tree', default=False)
         env_file = self._package_path + '/' + rospy.get_param('environment_file_name')
         hand_file = self._package_path + '/' + rospy.get_param('hand_file')
         robot_name = rospy.get_param('robot_name')
@@ -57,6 +58,7 @@ class HandlerClass(object):
                                               b_visualize_grasps=b_visualize_grasps,
                                               b_visualize_hfts=b_visualize_hfts,
                                               b_show_traj=b_show_traj,
+                                              b_show_search_tree=b_show_search_tree,
                                               hand_file=hand_file,
                                               min_iterations=self._params['min_iterations'],
                                               max_iterations=self._params['max_iterations'],

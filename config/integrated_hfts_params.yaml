@@ -2,6 +2,7 @@ visualize_grasps: False
 visualize_system: True
 visualize_hfts: True
 show_trajectory: True
+show_search_tree: True
 p_goal_max: 0.8
 p_goal_w: 1.2
 p_goal_min: 0.01

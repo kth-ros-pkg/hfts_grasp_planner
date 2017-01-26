@@ -1,7 +1,6 @@
 #! /usr/bin/python
 
-import pygraphviz as pgv
-import os, sys
+import sys
 import igraph
 import pickle
 import math
@@ -10,6 +9,7 @@ from rtree import index
 from std_msgs.msg import String
 from threading import RLock, Thread
 from gi.repository import Gtk, Gdk
+
 
 class GUI(Gtk.Window):
     def __init__(self):
