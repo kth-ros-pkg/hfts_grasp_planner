@@ -5,8 +5,8 @@
         <Translation>0.76 0.58 1.0</Translation>
         <Body type="static">
             <Geom type="trimesh">
-                <Data>../crayola/objectModel.ply</Data>
-                <Render>../crayola/objectModel.ply</Render>
+                <Data>../bunny/objectModel.ply</Data>
+                <Render>../bunny/objectModel.ply</Render>
             </Geom>
         </Body>
    </KinBody>

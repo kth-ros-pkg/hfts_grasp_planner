@@ -7,7 +7,6 @@ import rosgraph.roslogging
 import rospkg
 import logging
 import numpy
-import xml.etree.ElementTree as xml_et
 from hfts_grasp_planner.srv import PlanGraspMotion, PlanGraspMotionRequest, PlanGraspMotionResponse
 from hfts_grasp_planner.cfg import IntegratedHFTSPlannerConfig
 from hfts_grasp_planner.integrated_hfts_planner import IntegratedHFTSPlanner
@@ -36,6 +35,7 @@ class HandlerClass(object):
         b_visualize_grasps = rospy.get_param('visualize_grasps', default=False)
         b_visualize_system = rospy.get_param('visualize_system', default=False)
         b_visualize_hfts = rospy.get_param('visualize_hfts', default=False)
+        b_show_traj = rospy.get_param('show_trajectory', default=False)
         env_file = self._package_path + '/' + rospy.get_param('environment_file_name')
         hand_file = self._package_path + '/' + rospy.get_param('hand_file')
         robot_name = rospy.get_param('robot_name')
@@ -54,7 +54,9 @@ class HandlerClass(object):
         # Create planner
         self._planner = IntegratedHFTSPlanner(env_file=env_file, robot_name=robot_name, manipulator_name=manip_name,
                                               b_visualize_system=b_visualize_system,
-                                              b_visualize_grasps=b_visualize_grasps, b_visualize_hfts=b_visualize_hfts,
+                                              b_visualize_grasps=b_visualize_grasps,
+                                              b_visualize_hfts=b_visualize_hfts,
+                                              b_show_traj=b_show_traj,
                                               hand_file=hand_file,
                                               min_iterations=self._params['min_iterations'],
                                               max_iterations=self._params['max_iterations'],
@@ -77,51 +79,6 @@ class HandlerClass(object):
 
     def receive_joint_state(self, msg):
         self._recent_joint_state = msg
-
-    # def handle_plan_request(self, req):
-    #     """ Callback function for a grasp planning servce request. """
-    #     # TODO generate HFTS from point cloud if point cloud is specified
-    #     # pointCloud = req.point_cloud
-    #     # Load the requested object first
-    #     self._planner.loadObj(self._package_path + '/data', req.object_identifier)
-    #     # We always start from the root node, so create a root node
-    #     root_hfts_node = HFTSNode()
-    #     max_iterations = rospy.get_param('max_iterations', 20)
-    #     iteration = 0
-    #     # Iterate until either shutdown, max_iterations reached or a good grasp was found
-    #     while iteration < max_iterations and not rospy.is_shutdown():
-    #         return_node = self._planner.sampleGrasp(root_hfts_node, 30)
-    #         if return_node.isGoal():
-    #             grasp_pose = return_node.getHandTransform()
-    #             pose_quaternion = tff.quaternion_from_matrix(grasp_pose)
-    #             pose_position = grasp_pose[:3, -1]
-    #             # Save pose in ROS pose
-    #             ros_grasp_pose = Pose()
-    #             ros_grasp_pose.position.x = pose_position[0]
-    #             ros_grasp_pose.position.y = pose_position[1]
-    #             ros_grasp_pose.position.z = pose_position[2]
-    #             ros_grasp_pose.orientation.x = pose_quaternion[0]
-    #             ros_grasp_pose.orientation.y = pose_quaternion[1]
-    #             ros_grasp_pose.orientation.z = pose_quaternion[2]
-    #             ros_grasp_pose.orientation.w = pose_quaternion[3]
-    #             # Make a header for the message
-    #             header = Header()
-    #             header.frame_id = req.object_identifier
-    #             header.stamp = rospy.Time.now()
-    #             # Create stamped pose
-    #             stamped_ros_grasp_pose = PoseStamped()
-    #             stamped_ros_grasp_pose.pose = ros_grasp_pose
-    #             stamped_ros_grasp_pose.header = header
-    #             # Create JointState message to send hand configuration
-    #             hand_conf = return_node.getHandConfig()
-    #             ros_hand_joint_state = JointState()
-    #             ros_hand_joint_state.header = header
-    #             ros_hand_joint_state.position = hand_conf
-    #             ros_hand_joint_state.name = self._joint_names
-    #             # Return the response
-    #             return PlanGraspResponse(True, stamped_ros_grasp_pose, ros_hand_joint_state)
-    #     # In case of failure or shutdown return a response indicating failure.
-    #     return PlanGraspResponse(False, PoseStamped(), JointState())
 
     def convert_configuration(self, configuration):
         output_config = None

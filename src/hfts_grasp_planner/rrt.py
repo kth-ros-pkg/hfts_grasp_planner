@@ -13,35 +13,32 @@ from rtree import index
 
 
 class SampleData:
-    def __init__(self, config, data=None, dataCopyFct=copy.deepcopy, idNum=-1):
+    def __init__(self, config, data=None, data_copy_fn=copy.deepcopy, id_num=-1):
         self._config = config
-        self._id = idNum
+        self._id = id_num
         self._data = data
-        self._dataCopyFct = dataCopyFct
+        self._dataCopyFct = data_copy_fn
 
-    def getConfiguration(self):
+    def get_configuration(self):
         return self._config
 
-    def getData(self):
+    def get_data(self):
         return self._data
 
     def copy(self):
-        copiedData = None
+        copied_data = None
         if self._data is not None:
-            copiedData = self._dataCopyFct(self._data)
-        return SampleData(numpy.copy(self._config), copiedData, dataCopyFct=self._dataCopyFct, idNum=self._id)
+            copied_data = self._dataCopyFct(self._data)
+        return SampleData(numpy.copy(self._config), copied_data, data_copy_fn=self._dataCopyFct, id_num=self._id)
 
-    def isValid(self):
+    def is_valid(self):
         return self._config is not None
 
-    def isEqual(self, otherSampleData):
-        return (self._config == otherSampleData._config).all() and self._data == otherSampleData._data
+    def is_equal(self, other_sample_data):
+        return (self._config == other_sample_data._config).all() and self._data == other_sample_data._data
 
-    def getId(self):
+    def get_id(self):
         return self._id
-
-    # def setId(self, idNum):
-    #     self._id = idNum
 
     def __repr__(self):
         return self.__str__()
@@ -57,19 +54,19 @@ class TreeNode(object):
         self._data = data
         self._children = []
 
-    def getSampleData(self):
+    def get_sample_data(self):
         return self._data
 
-    def getId(self):
+    def get_id(self):
         return self._id
 
-    def getParentId(self):
+    def get_parent_id(self):
         return self._parent
 
-    def addChildId(self, cid):
+    def add_child_id(self, cid):
         self._children.append(cid)
 
-    def getChildren(self):
+    def get_children(self):
         return self._children
 
     def __str__(self):
@@ -78,68 +75,64 @@ class TreeNode(object):
 
 class Tree(object):
     TREE_ID = 0
-    def __init__(self, rootData, bForwardTree=True):
-        self._nodes = [TreeNode(0, 0, rootData.copy())]
-        self._labeledNodes = []
-        self._node_id = 1
-        self._bForwardTree = bForwardTree
-        self._tree_id = Tree.TREE_ID + 1
-        Tree.TREE_ID = Tree.TREE_ID + 1
 
-    def add(self, parent, childData):
+    def __init__(self, root_data, b_forward_tree=True):
+        self._nodes = [TreeNode(0, 0, root_data.copy())]
+        self._labeled_nodes = []
+        self._node_id = 1
+        self._b_forward_tree = b_forward_tree
+        self._tree_id = Tree.TREE_ID + 1
+        Tree.TREE_ID += 1
+
+    def add(self, parent, child_data):
         """
             Adds the given data as a child node of parent.
             @param parent: Must be of type TreeNode and denotes the parent node.
-            @paran childData: SampleData that is supposed to be saved in the child node (it is copied).
+            @param child_data: SampleData that is supposed to be saved in the child node (it is copied).
         """
-        childNode = TreeNode(self._node_id, parent.getId(), childData.copy())
-        parent.addChildId(childNode.getId())
-        self._nodes.append(childNode)
-        # self._parents.append(parent.getId())
+        child_node = TreeNode(self._node_id, parent.get_id(), child_data.copy())
+        parent.add_child_id(child_node.get_id())
+        self._nodes.append(child_node)
+        # self._parents.append(parent.get_id())
         # assert(len(self._parents) == self._node_id + 1)
         self._node_id += 1
-        return childNode
+        return child_node
 
-    def getId(self):
+    def get_id(self):
         return self._tree_id
 
-    def addLabeledNode(self, node):
-        self._labeledNodes.append(node)
+    def add_labeled_node(self, node):
+        self._labeled_nodes.append(node)
 
-    def getLabeledNodes(self):
-        return self._labeledNodes
+    def get_labeled_nodes(self):
+        return self._labeled_nodes
 
-    def clearLabeledNodes(self):
-        self._labeledNodes = []
+    def clear_labeled_nodes(self):
+        self._labeled_nodes = []
 
-    def removeLabeledNode(self, node):
-        if node in self._labeledNodes:
-            self._labeledNodes.remove(node)
+    def remove_labeled_node(self, node):
+        if node in self._labeled_nodes:
+            self._labeled_nodes.remove(node)
 
-    # def clear(self):
-    #     self._nodes = []
-    #     self._parents = []
-    #     self._node_id = 0
-
-    def nearestNeighbor(self, sample):
+    def nearest_neighbor(self, sample):
         pass
 
-    def extractPath(self, goalNode):
-        path = [goalNode.getSampleData()]
-        currentNode = goalNode
-        while (currentNode.getId() != 0):
-            currentNode = self._nodes[currentNode.getParentId()]
-            path.append(currentNode.getSampleData())
+    def extract_path(self, goal_node):
+        path = [goal_node.get_sample_data()]
+        current_node = goal_node
+        while current_node.get_id() != 0:
+            current_node = self._nodes[current_node.get_parent_id()]
+            path.append(current_node.get_sample_data())
         path.reverse()
         return path
 
-    def getRootNode(self):
+    def get_root_node(self):
         return self._nodes[0]
 
     def size(self):
         return len(self._nodes)
 
-    def merge(self, mergeNodeA, otherTree, mergeNodeB):
+    def merge(self, merge_node_a, other_tree, merge_node_b):
         """
             Merges this tree with the given tree. The connection is established through nodeA and nodeB,
             for which it is assumed that both nodeA and nodeB represent the same configuration.
@@ -148,56 +141,57 @@ class Tree(object):
 
             Runtime: O(size(otherTree) * num_labeled_nodes(otherTree))
 
-            @param mergeNodeA The node of this tree where to attach otherTree
-            @param otherTree  The other tree (is not changed)
-            @param mergeNodeB The node of tree B that is merged with mergeNodeA from this tree.
+            @param merge_node_a The node of this tree where to attach otherTree
+            @param other_tree  The other tree (is not changed)
+            @param merge_node_b The node of tree B that is merged with mergeNodeA from this tree.
 
             @return The root of treeB as a TreeNode of treeA after the merge.
         """
-        nodeStack = [(mergeNodeA, mergeNodeB, None)]
-        bRootNodeInA = None
-        while len(nodeStack) > 0:
-            (currentNodeA, currentNodeB, ignoreId) = nodeStack.pop()
-            for childId in currentNodeB.getChildren():
-                if childId == ignoreId:  # prevent adding duplicates
+        node_stack = [(merge_node_a, merge_node_b, None)]
+        b_root_node_in_a = None
+        while len(node_stack) > 0:
+            (current_node_a, current_node_b, ignore_id) = node_stack.pop()
+            for child_id in current_node_b.get_children():
+                if child_id == ignore_id:  # prevent adding duplicates
                     continue
-                childNodeB = otherTree._nodes[childId]
-                childNodeA = self.add(currentNodeA, childNodeB.getSampleData())
-                if childNodeB in otherTree._labeledNodes:
-                    self.addLabeledNode(childNodeA)
-                nodeStack.append((childNodeA, childNodeB, currentNodeB.getId()))
+                child_node_b = other_tree._nodes[child_id]
+                child_node_a = self.add(current_node_a, child_node_b.get_sample_data())
+                if child_node_b in other_tree._labeled_nodes:
+                    self.add_labeled_node(child_node_a)
+                node_stack.append((child_node_a, child_node_b, current_node_b.get_id()))
 
-            # In case currentNodeB is not the root of B, we also need to add the parent
+            # In case current_node_b is not the root of B, we also need to add the parent
             # as a child in this tree.
-            parentId = currentNodeB.getParentId()
-            if currentNodeB.getId() != parentId:
-                if parentId != ignoreId:  # prevent adding duplicates
-                    parentNodeB = otherTree._nodes[currentNodeB.getParentId()]
-                    childNodeA = self.add(currentNodeA, parentNodeB.getSampleData())
-                    nodeStack.append((childNodeA, parentNodeB, currentNodeB.getId()))
-                    if parentNodeB in otherTree._labeledNodes:
-                        self.addLabeledNode(childNodeA)
+            parent_id = current_node_b.get_parent_id()
+            if current_node_b.get_id() != parent_id:
+                if parent_id != ignore_id:  # prevent adding duplicates
+                    parent_node_b = other_tree._nodes[current_node_b.get_parent_id()]
+                    child_node_a = self.add(current_node_a, parent_node_b.get_sample_data())
+                    node_stack.append((child_node_a, parent_node_b, current_node_b.get_id()))
+                    if parent_node_b in other_tree._labeled_nodes:
+                        self.add_labeled_node(child_node_a)
             else:  # save the root to return it
-                bRootNodeInA = currentNodeA
+                b_root_node_in_a = current_node_a
 
-        return bRootNodeInA
+        return b_root_node_in_a
 
 
 class SqrtTree(Tree):
     def __init__(self, root):
         super(SqrtTree, self).__init__(root)
+        self.offset = 0
 
     def add(self, parent, child):
-        childNode = super(SqrtTree, self).add(parent, child)
-        self._updateStride()
-        return childNode
+        child_node = super(SqrtTree, self).add(parent, child)
+        self._update_stride()
+        return child_node
 
     # def clear(self):
     #     super(SqrtTree, self).clear()
     #     self.offset = 0
     #     self.stride = 0
 
-    def nearestNeighbor(self, q):
+    def nearest_neighbor(self, q):
         """
             Computes an approximate nearest neighbor of q.
             To keep the computation time low, this method only considers sqrt(n)
@@ -212,58 +206,53 @@ class SqrtTree(Tree):
             for i in range(0, self.stride):
                 pos = (i * self.stride + self.offset) % len(self._nodes)
                 n = self._nodes[pos]
-                dt = numpy.linalg.norm(q - n.getSampleData().getConfiguration())
-                if (dt < d):
+                dt = numpy.linalg.norm(q - n.get_sample_data().get_configuration())
+                if dt < d:
                     d = dt
                     nn = n
             self.offset = random.randint(0, self.stride)
         return nn
 
-    def _updateStride(self):
+    def _update_stride(self):
         self.stride = int(1 + math.floor(math.sqrt(len(self._nodes))))
 
 
 class RTreeTree(Tree):
-    def __init__(self, root, dimension, scalingFactors, bForwardTree=True):
-        super(RTreeTree, self).__init__(root, bForwardTree=bForwardTree)
-        self._scalingFactors = scalingFactors
-        self._createIndex(dimension)
+    def __init__(self, root, dimension, scaling_factors, b_forward_tree=True):
+        super(RTreeTree, self).__init__(root, b_forward_tree=b_forward_tree)
+        self._scaling_factors = scaling_factors
+        self._create_index(dimension)
         self.dimension = dimension
-        self._addToIdx(self._nodes[0])
+        self._add_to_idx(self._nodes[0])
 
-    def add(self, parent, childData):
-        childNode = super(RTreeTree, self).add(parent, childData)
-        self._addToIdx(childNode)
-        return childNode
+    def add(self, parent, child_data):
+        child_node = super(RTreeTree, self).add(parent, child_data)
+        self._add_to_idx(child_node)
+        return child_node
 
-    # def clear(self):
-    #     super(RTreeTree, self).clear()
-    #     self._createIndex(self.dimension)
-    #     self._tid = 0
-
-    def nearestNeighbor(self, sampleData):
+    def nearest_neighbor(self, sample_data):
         if len(self._nodes) == 0:
             return None
-        pointList = list(sampleData.getConfiguration())
-        pointList = map(lambda x, y: math.sqrt(x) * y, self._scalingFactors, pointList)
-        pointList += pointList
-        nns = list(self.idx.nearest(pointList))
+        point_list = list(sample_data.get_configuration())
+        point_list = map(lambda x, y: math.sqrt(x) * y, self._scaling_factors, point_list)
+        point_list += point_list
+        nns = list(self.idx.nearest(point_list))
         return self._nodes[nns[0]]
 
-    def _addToIdx(self, childNode):
-        pointList = list(childNode.getSampleData().getConfiguration())
-        pointList = map(lambda x, y: math.sqrt(x) * y, self._scalingFactors, pointList)
-        pointList += pointList
-        self.idx.insert(childNode.getId(), pointList)
+    def _add_to_idx(self, child_node):
+        point_list = list(child_node.get_sample_data().get_configuration())
+        point_list = map(lambda x, y: math.sqrt(x) * y, self._scaling_factors, point_list)
+        point_list += point_list
+        self.idx.insert(child_node.get_id(), point_list)
 
-    def _createIndex(self, dim):
+    def _create_index(self, dim):
         prop = index.Property()
         prop.dimension = dim
         self.idx = index.Index(properties=prop)
 
 
 class Constraint(object):
-   def project(self, oldConfig, config):
+    def project(self, old_config, config):
         return config
 
 
@@ -282,8 +271,8 @@ class ConstraintsManager(object):
         return config
 
     def set_active_tree(self, tree):
-        if tree.getId() in self._constraints_storage:
-            self._active_constraints.extend(self._constraints_storage[tree.getId()])
+        if tree.get_id() in self._constraints_storage:
+            self._active_constraints.extend(self._constraints_storage[tree.get_id()])
 
     def reset_constraints(self):
         self._active_constraints = []
@@ -294,590 +283,329 @@ class ConstraintsManager(object):
 
     def register_new_tree(self, tree):
         if self._new_tree_callback is not None:
-            self._constraints_storage[tree.getId()] = self._new_tree_callback(tree)
+            self._constraints_storage[tree.get_id()] = self._new_tree_callback(tree)
+
 
 class PGoalProvider(object):
-    def computePGoal(self, numTrees):
+    def compute_p_goal(self, num_trees):
         pass
 
-class ConstPGoalProvider(PGoalProvider):
-    def __init__(self, pGoal):
-        self._pGoal = pGoal
 
-    def computePGoal(self, numTrees):
-        logging.debug('[ConstPGoalProvider::computePGoal] Returning constant pGoal')
-        if numTrees == 0:
+class ConstPGoalProvider(PGoalProvider):
+    def __init__(self, p_goal):
+        self._pGoal = p_goal
+
+    def compute_p_goal(self, num_trees):
+        logging.debug('[ConstPGoalProvider::compute_p_goal] Returning constant pGoal')
+        if num_trees == 0:
             return 1.0
         return self._pGoal
 
-class DynamicPGoalProvider(PGoalProvider):
-    def __init__(self, pMax=0.8, goalW=1.2, pGoalMin=0.01):
-        self._pMax = pMax
-        self._goalW = goalW
-        self._pGoalMin = pGoalMin
 
-    def computePGoal(self, numTrees):
-        logging.debug('[DynamicPGoalProvider::computePGoal] Returning dynamic pGoal')
-        return self._pMax * math.exp(-self._goalW * numTrees) + self._pGoalMin
+class DynamicPGoalProvider(PGoalProvider):
+    def __init__(self, p_max=0.8, goal_w=1.2, p_goal_min=0.01):
+        self._pMax = p_max
+        self._goalW = goal_w
+        self._pGoalMin = p_goal_min
+
+    def compute_p_goal(self, num_trees):
+        logging.debug('[DynamicPGoalProvider::compute_p_goal] Returning dynamic pGoal')
+        return self._pMax * math.exp(-self._goalW * num_trees) + self._pGoalMin
+
 
 class StatsLogger:
     def __init__(self):
-        self.numBackwardTrees = 0
-        self.numGoalSampled = 0
-        self.numValidGoalSampled = 0
-        self.numApproxGoalSampled = 0
-        self.numAttemptedTreeConnects = 0
-        self.numSuccessfulTreeConnects = 0
-        self.numGoalNodesSampled = 0
-        self.numCFreeSamples = 0
-        self.numAccumulatedLogs = 1
-        self.finalGraspQuality = 0.0
+        self.num_backward_trees = 0
+        self.num_goals_sampled = 0
+        self.num_valid_goals_sampled = 0
+        self.num_approx_goals_sampled = 0
+        self.num_attempted_tree_connects = 0
+        self.num_successful_tree_connects = 0
+        self.num_goal_nodes_sampled = 0
+        self.num_c_free_samples = 0
+        self.num_accumulated_logs = 1
+        self.final_grasp_quality = 0.0
         self.runtime = 0.0
         self.success = 0
         self.treeSizes = {}
 
     def clear(self):
-        self.numBackwardTrees = 0
-        self.numGoalSampled = 0
-        self.numValidGoalSampled = 0
-        self.numApproxGoalSampled = 0
-        self.numAttemptedTreeConnects = 0
-        self.numSuccessfulTreeConnects = 0
-        self.numGoalNodesSampled = 0
-        self.numCFreeSamples = 0
-        self.numAccumulatedLogs = 1
-        self.finalGraspQuality = 0.0
+        self.num_backward_trees = 0
+        self.num_goals_sampled = 0
+        self.num_valid_goals_sampled = 0
+        self.num_approx_goals_sampled = 0
+        self.num_attempted_tree_connects = 0
+        self.num_successful_tree_connects = 0
+        self.num_goal_nodes_sampled = 0
+        self.num_c_free_samples = 0
+        self.num_accumulated_logs = 1
+        self.final_grasp_quality = 0.0
         self.runtime = 0.0
         self.success = 0
         self.treeSizes = {}
 
-    def toDict(self):
-        aDict = {}
-        aDict['numBackwardTrees'] = self.numBackwardTrees
-        aDict['numGoalSampled'] = self.numGoalSampled
-        aDict['numValidGoalSampled'] = self.numValidGoalSampled
-        aDict['numApproxGoalSampled'] = self.numApproxGoalSampled
-        aDict['numGoalNodesSampled'] = self.numGoalNodesSampled
-        aDict['numSuccessfulTreeConnects'] = self.numSuccessfulTreeConnects
-        aDict['numCFreeSamples'] = self.numCFreeSamples
-        aDict['finalGraspQuality'] = float(self.finalGraspQuality)
-        aDict['runtime'] = self.runtime
-        aDict['success'] = self.success
-        return aDict
+    def to_dict(self):
+        a_dict = {'numBackwardTrees': self.num_backward_trees, 'numGoalSampled': self.num_goals_sampled,
+                  'numValidGoalSampled': self.num_valid_goals_sampled,
+                  'numApproxGoalSampled': self.num_approx_goals_sampled,
+                  'numGoalNodesSampled': self.num_goal_nodes_sampled,
+                  'numSuccessfulTreeConnects': self.num_successful_tree_connects,
+                  'numCFreeSamples': self.num_c_free_samples, 'finalGraspQuality': float(self.final_grasp_quality),
+                  'runtime': self.runtime, 'success': self.success}
+        return a_dict
 
-    def printLogs(self):
+    def print_logs(self):
         print 'Logs:'
-        print '     numBackwardTrees(avg): ', self.numBackwardTrees
-        print '     numGoalSampled(avg): ', self.numGoalSampled
-        print '     numValidGoalSampled(avg): ', self.numValidGoalSampled
-        print '     numApproxGoalSampled(avg): ', self.numApproxGoalSampled
-        print '     numGoalNodesSampled(avg): ', self.numGoalNodesSampled
-        print '     numAttemptedTreeConnects(avg): ', self.numAttemptedTreeConnects
-        print '     numSuccessfulTreeConnects(avg): ', self.numSuccessfulTreeConnects
-        print '     numCFreeSamples(avg): ', self.numCFreeSamples
-        print '     finalGraspQuality(avg): ', self.finalGraspQuality
+        print '     num_backward_trees(avg): ', self.num_backward_trees
+        print '     num_goals_sampled(avg): ', self.num_goals_sampled
+        print '     num_valid_goals_sampled(avg): ', self.num_valid_goals_sampled
+        print '     num_approx_goals_sampled(avg): ', self.num_approx_goals_sampled
+        print '     num_goal_nodes_sampled(avg): ', self.num_goal_nodes_sampled
+        print '     num_attempted_tree_connects(avg): ', self.num_attempted_tree_connects
+        print '     num_successful_tree_connects(avg): ', self.num_successful_tree_connects
+        print '     num_c_free_samples(avg): ', self.num_c_free_samples
+        print '     final_grasp_quality(avg): ', self.final_grasp_quality
         print '     runtime(avg): ', self.runtime
         print '     success(avg): ', self.success
-        if self.numAccumulatedLogs == 1:
+        if self.num_accumulated_logs == 1:
             print '     treeSizes: ', self.treeSizes
 
-    def accumulate(self, otherLogger):
-        self.numBackwardTrees += otherLogger.numBackwardTrees
-        self.numGoalSampled += otherLogger.numGoalSampled
-        self.numValidGoalSampled += otherLogger.numValidGoalSampled
-        self.numApproxGoalSampled += otherLogger.numApproxGoalSampled
-        self.numAttemptedTreeConnects += otherLogger.numAttemptedTreeConnects
-        self.numSuccessfulTreeConnects += otherLogger.numSuccessfulTreeConnects
-        self.numGoalNodesSampled += otherLogger.numGoalNodesSampled
-        self.numCFreeSamples += otherLogger.numCFreeSamples
-        self.numAccumulatedLogs += otherLogger.numAccumulatedLogs
-        self.finalGraspQuality += otherLogger.finalGraspQuality
-        self.runtime += otherLogger.runtime
-        self.success += otherLogger.success
-        self.treeSizes.update(otherLogger.treeSizes)
+    def accumulate(self, other_logger):
+        self.num_backward_trees += other_logger.numBackwardTrees
+        self.num_goals_sampled += other_logger.numGoalSampled
+        self.num_valid_goals_sampled += other_logger.numValidGoalSampled
+        self.num_approx_goals_sampled += other_logger.numApproxGoalSampled
+        self.num_attempted_tree_connects += other_logger.numAttemptedTreeConnects
+        self.num_successful_tree_connects += other_logger.numSuccessfulTreeConnects
+        self.num_goal_nodes_sampled += other_logger.numGoalNodesSampled
+        self.num_c_free_samples += other_logger.numCFreeSamples
+        self.num_accumulated_logs += other_logger.numAccumulatedLogs
+        self.final_grasp_quality += other_logger.finalGraspQuality
+        self.runtime += other_logger.runtime
+        self.success += other_logger.success
+        self.treeSizes.update(other_logger.treeSizes)
 
-    def finalizeAccumulation(self):
-        self.numBackwardTrees = float(self.numBackwardTrees) / float(self.numAccumulatedLogs)
-        self.numGoalSampled = float(self.numGoalSampled) / float(self.numAccumulatedLogs)
-        self.numValidGoalSampled = float(self.numValidGoalSampled) / float(self.numAccumulatedLogs)
-        self.numApproxGoalSampled = float(self.numApproxGoalSampled) / float(self.numAccumulatedLogs)
-        self.numAttemptedTreeConnects = float(self.numAttemptedTreeConnects) / float(self.numAccumulatedLogs)
-        self.numSuccessfulTreeConnects = float(self.numSuccessfulTreeConnects) / float(self.numAccumulatedLogs)
-        self.numGoalNodesSampled = float(self.numGoalNodesSampled) / float(self.numAccumulatedLogs)
-        self.finalGraspQuality = self.finalGraspQuality / float(self.numAccumulatedLogs)
-        self.runtime = self.runtime / float(self.numAccumulatedLogs)
-        self.success = self.success / float(self.numAccumulatedLogs)
-        self.numCFreeSamples = float(self.numCFreeSamples) / float(self.numAccumulatedLogs)
+    def finalize_accumulation(self):
+        self.num_backward_trees = float(self.num_backward_trees) / float(self.num_accumulated_logs)
+        self.num_goals_sampled = float(self.num_goals_sampled) / float(self.num_accumulated_logs)
+        self.num_valid_goals_sampled = float(self.num_valid_goals_sampled) / float(self.num_accumulated_logs)
+        self.num_approx_goals_sampled = float(self.num_approx_goals_sampled) / float(self.num_accumulated_logs)
+        self.num_attempted_tree_connects = float(self.num_attempted_tree_connects) / float(self.num_accumulated_logs)
+        self.num_successful_tree_connects = float(self.num_successful_tree_connects) / float(self.num_accumulated_logs)
+        self.num_goal_nodes_sampled = float(self.num_goal_nodes_sampled) / float(self.num_accumulated_logs)
+        self.final_grasp_quality /= float(self.num_accumulated_logs)
+        self.runtime /= float(self.num_accumulated_logs)
+        self.success /= float(self.num_accumulated_logs)
+        self.num_c_free_samples = float(self.num_c_free_samples) / float(self.num_accumulated_logs)
 
 
 class RRT:
-    def __init__(self, pGoalProvider, cfreeSampler, goalSampler, logger, pGoalTree=0.8, constraintsManager=None):  # pForwardTree, pConnectTree
+    def __init__(self, p_goal_provider, c_free_sampler, goal_sampler, logger, pgoal_tree=0.8,
+                 constraints_manager=None):  # pForwardTree, pConnectTree
         """ Initializes the RRT planner
             @param pGoal - Instance of PGoalProvider that provides a probability of sampling a new goal
-            @param cfreeSampler - A sampler of c_free.
-            @param goalSampler - A sampler of the goal region.
+            @param c_free_sampler - A sampler of c_free.
+            @param goal_sampler - A sampler of the goal region.
             @param logger - A logger (of type Logger) for printouts.
-            @param constraintsManager - (optional) a constraint manager.
+            @param constraints_manager - (optional) a constraint manager.
         """
-        self.pGoalProvider = pGoalProvider
-        self.pGoalTree = pGoalTree
-        self.goalSampler = goalSampler
-        self.cfreeSampler = cfreeSampler
+        self.p_goal_provider = p_goal_provider
+        self.p_goal_tree = pgoal_tree
+        self.goal_sampler = goal_sampler
+        self.c_free_sampler = c_free_sampler
         self.logger = logger
-        self.statsLogger = StatsLogger()
+        self.stats_logger = StatsLogger()
         # self.debugConfigList = []
-        if constraintsManager is None:
-            constraintsManager = ConstraintsManager()
-        self._constraintsManager = constraintsManager
+        if constraints_manager is None:
+            constraints_manager = ConstraintsManager()
+        self._constraints_manager = constraints_manager
 
-    def extend(self, tree, randomSample, addIntermediates=True, addTreeStep=10):
-        self._constraintsManager.set_active_tree(tree)
-        nearestNode = tree.nearestNeighbor(randomSample)
-        (bConnected, samples) = self.cfreeSampler.interpolate(nearestNode.getSampleData(), randomSample,
-                                                              projectionFunction=self._constraintsManager.project)
-        parentNode = nearestNode
-        self.logger.debug('[RRT::extend We have ' + str(len(samples)-1) + " intermediate configurations")
-        if addIntermediates:
-            for i in range(addTreeStep, len(samples)-1, addTreeStep):
-                parentNode = tree.add(parentNode, samples[i].copy())
+    def extend(self, tree, random_sample, add_intermediates=True, add_tree_step=10):
+        self._constraints_manager.set_active_tree(tree)
+        nearest_node = tree.nearest_neighbor(random_sample)
+        (bConnected, samples) = self.c_free_sampler.interpolate(nearest_node.get_sample_data(), random_sample,
+                                                                projection_function=self._constraints_manager.project)
+        parent_node = nearest_node
+        self.logger.debug('[RRT::extend We have ' + str(len(samples) - 1) + " intermediate configurations")
+        if add_intermediates:
+            for i in range(add_tree_step, len(samples) - 1, add_tree_step):
+                parent_node = tree.add(parent_node, samples[i].copy())
         if len(samples) > 1:
-            lastNode = tree.add(parentNode, samples[-1].copy())
+            last_node = tree.add(parent_node, samples[-1].copy())
         else:
             # self.debugConfigList.extend(samples)
-            lastNode = parentNode
-        return (lastNode, bConnected)
+            last_node = parent_node
+        return last_node, bConnected
 
-    def rrtHierarchy(self, startConfig, timeLimit=60, debugFunction=lambda x: x):
-        """ RRT algorithm with approximate goal region """
-        self.goalSampler.clear()
-        self.statsLogger.clear()
-        startSample = SampleData(startConfig)
-        tree = RTreeTree(startSample, self.cfreeSampler.getSpaceDimension())
-        solutionFound = False
-        startTime = time.clock()
-        goalNode = None
-        debugFunction(tree)
-        while time.clock() < startTime + timeLimit and not solutionFound:
-            p = random.random()
-            if (p > self.pGoal):
-                randomSample = self.cfreeSampler.sample()
-            else:
-                randomSample = self.goalSampler.sample()
-            if not randomSample.isValid():
-                continue
-            (newNode, bConnected) = self.extend(tree, randomSample)
-
-            # Check whether we reached our approximate goal
-            if (self.goalSampler.isApproxGoal(newNode.getSampleData())):
-                # if so, let's see whether this is a real goal
-                if (self.goalSampler.is_goal(newNode.getSampleData())):
-                    solutionFound = True
-                    goalNode = newNode
-                else:
-                    # tell the sampler to refine the goal sampling in this area
-                    self.goalSampler.refineGoalSampling(newNode.getSampleData())
-            debugFunction(tree)
-
-        if solutionFound:
-            self.logger.info('Found a solution!')
-            return tree.extractPath(goalNode)
-        return None
-
-    def _growTrees(self, treeA, treeB, randomSample):
-        (newNodeA, bConnected) = self.extend(treeA, randomSample)
-        (newNodeB, bConnected) = self.extend(treeB, newNodeA.getSampleData())
-        return (newNodeA, newNodeB, bConnected)
-
-    def _pickRandomBackwardTree(self, goalTrees, approxGoalTrees):
-        dice = random.randint(0, 1)
-        backwardTree = None
-        bGoalTree = False
-        if dice == 0 and len(goalTrees) > 0:
-            backwardTree = random.choice(goalTrees)
-            bGoalTree = True
-        elif len(approxGoalTrees) > 0:
-            backwardTree = random.choice(approxGoalTrees)
-        return (backwardTree, bGoalTree)
-
-    def _biRRT_helper_nearestTree(self, sample, backwardTrees):
+    def pick_nearest_tree(self, sample, backward_trees):
         nn = None
         dist = float('inf')
         tree = None
-        for treeTemp in backwardTrees:
-            nnTemp = treeTemp.nearestNeighbor(sample)
-            distTemp = self.cfreeSampler.distance(sample.getConfiguration(),
-                                                  nnTemp.getSampleData().getConfiguration())
-            if distTemp < dist:
-                dist = distTemp
-                nn = nnTemp
+        for treeTemp in backward_trees:
+            nn_temp = treeTemp.nearest_neighbor(sample)
+            dist_temp = self.c_free_sampler.distance(sample.get_configuration(),
+                                                     nn_temp.get_sample_data().get_configuration())
+            if dist_temp < dist:
+                dist = dist_temp
+                nn = nn_temp
                 tree = treeTemp
-        return (tree, nn)
+        return tree, nn
 
-    def biRRT(self, startConfig, useHierarchy=True, timeLimit=60, debugFunction=lambda x, y: None,
-              shortcutTime=5.0, timerFunction=time.time):
-        """ Bidirectional RRT algorithm with approximate goal region. """
-        self.goalSampler.clear()
-        self.statsLogger.clear()
-        self._constraintsManager.clear()
-        forwardTree = RTreeTree(SampleData(startConfig), self.cfreeSampler.getSpaceDimension(),
-                               self.cfreeSampler.getScalingFactors())
-        self._constraintsManager.register_new_tree(forwardTree)
-        backwardTrees = []
-        pathFound = False
-        path = None
-        startTime = timerFunction()
-        debugFunction(forwardTree, backwardTrees)
-        bSearchingForward = True
-        # self.debugConfigList = []
-
-        # Main loop
-        self.logger.debug('[RRT::biRRT] Starting planning loop')
-        while timerFunction() < startTime + timeLimit and not pathFound:
-            debugFunction(forwardTree, backwardTrees)
-            p = random.random()
-            self.logger.debug('[RRT::biRRT] Rolled a dice: ' + str(p))
-            pGoal = self.pGoalProvider.computePGoal(len(backwardTrees))
-            if p <= pGoal:
-                # Create a new backward tree
-                self.logger.debug('[RRT::biRRT] Creating a new backward tree')
-                goalSample = self.goalSampler.sample(False)
-                self.statsLogger.numGoalSampled += 1
-                self.logger.debug('[RRT::biRRT] Sampled a new goal: ' + str(goalSample))
-                if goalSample.isValid():
-                    self.statsLogger.numValidGoalSampled += 1
-                    bTree = RTreeTree(goalSample, self.cfreeSampler.getSpaceDimension(),
-                                      self.cfreeSampler.getScalingFactors(), bForwardTree=False)
-                    backwardTrees.append(bTree)
-                    self._constraintsManager.register_new_tree(bTree)
-                    self.statsLogger.numBackwardTrees += 1
-                    self.logger.debug('[RRT::biRRT] Goal is valid; created new backward tree')
-            else:
-                # Extend search trees
-                self.logger.debug('[RRT::biRRT] Extending search trees')
-                self._constraintsManager.reset_constraints()
-                randomSample = self.cfreeSampler.sample()
-                self.logger.debug('[RRT::biRRT] Drew random sample: ' + str(randomSample))
-                self.statsLogger.numCFreeSamples += 1
-                (forwardNode, backwardNode, backwardTree, bConnected) = (None, None, None, False)
-                if bSearchingForward or len(backwardTrees) == 0:
-                    self.logger.debug('[RRT::biRRT] Extending forward tree to random sample')
-                    (forwardNode, bConnected) = self.extend(forwardTree, randomSample)
-                    self.logger.debug('[RRT::biRRT] Forward tree connected to sample: ' + str(bConnected))
-                    self.logger.debug('[RRT::biRRT] New forward tree node: ' + str(forwardNode))
-                    self.logger.debug('[RRT::biRRT] Attempting to connect forward tree to backward tree')
-                    if len(backwardTrees) > 0:
-                        (backwardTree, nearestNode) = self._biRRT_helper_nearestTree(forwardNode.getSampleData(), backwardTrees)
-                        (backwardNode, bConnected) = self.extend(backwardTree, forwardNode.getSampleData())
-                    else:
-                        bConnected = False
-                else:
-                    #(backwardTree, nearestNode) = self._biRRT_helper_nearestTree(randomSample, backwardTrees)
-                    self.logger.debug('[RRT::biRRT] Extending backward tree to random sample')
-                    backwardTree = random.choice(backwardTrees)
-                    (backwardNode, bConnected) = self.extend(backwardTree, randomSample)
-                    self.logger.debug('[RRT::biRRT] New backward tree node: ' + str(backwardNode))
-                    self.logger.debug('[RRT::biRRT] Backward tree connected to sample: ' + str(bConnected))
-                    self.logger.debug('[RRT::biRRT] Attempting to connect forward tree to backward tree')
-                    (forwardNode, bConnected) = self.extend(forwardTree, backwardNode.getSampleData())
-                self.statsLogger.numAttemptedTreeConnects += 1
-                if bConnected:
-                    self.logger.debug('[RRT::biRRT] Trees connected')
-                    self.statsLogger.numSuccessfulTreeConnects += 1
-                    treeName = 'merged_backward_tree' + str(self.statsLogger.numSuccessfulTreeConnects)
-                    self.statsLogger.treeSizes[treeName] = backwardTree.size()
-                    rootB = forwardTree.merge(forwardNode, backwardTree, backwardNode)
-                    backwardTrees.remove(backwardTree)
-                    self._constraintsManager.reset_constraints()
-                    if useHierarchy:
-                        forwardTree.addLabeledNode(rootB)
-                        (pathFound, path, newBackwardTree) = self._biRRT_helper_checkForGoal(forwardTree)
-                        if newBackwardTree is not None:
-                            backwardTrees.append(newBackwardTree)
-                            self._constraintsManager.register_new_tree(newBackwardTree)
-                            self.statsLogger.numBackwardTrees += 1
-                            self.logger.debug('[RRT:biRRT] Received a new backward tree from checkForGoal')
-                    else:
-                        path = forwardTree.extractPath(rootB)
-                        pathFound = True
-                bSearchingForward = not bSearchingForward
-
-        self.statsLogger.treeSizes['forward_tree'] = forwardTree.size()
-        for i in range(len(backwardTrees)):
-            self.statsLogger.treeSizes['unmerged_backward_tree' + str(i)] = backwardTrees[i].size()
-        debugFunction(forwardTree, backwardTrees)
-        self.statsLogger.numGoalNodesSampled = self.goalSampler.getNumGoalNodesSampled()
-        self.statsLogger.runtime = timerFunction() - startTime
-        if path is not None:
-            self.statsLogger.finalGraspQuality = self.goalSampler.getQuality(path[-1])
-            self.statsLogger.success = 1
-        # if useHierarchy and path is not None:
-        #     self.statsLogger.connectedGoalFromHotRegion = self.goalSampler.goalIsFromHotRegion(path[-1])
-        return self.shortcut(path, shortcutTime)
-
-    def proximityBiRRT(self, startConfig, timeLimit=60, debugFunction=lambda x, y: None,
-                       shortcutTime=5.0, timerFunction=time.time):
+    def proximity_birrt(self, start_config, time_limit=60, debug_function=lambda x, y: None,
+                        shortcut_time=5.0, timer_function=time.time):
         """ Bidirectional RRT algorithm with hierarchical goal region that
             uses free space proximity to bias sampling. """
-        if not self.cfreeSampler.isValid(startConfig):
+        if not self.c_free_sampler.is_valid(start_config):
             self.logger.info('[RRT::proximityBiRRT] Start configuration is invalid. Aborting.')
             return None
         from sampler import FreeSpaceProximitySampler, FreeSpaceModel, ExtendedFreeSpaceModel
-        assert type(self.goalSampler) == FreeSpaceProximitySampler
-        self.goalSampler.clear()
-        self.statsLogger.clear()
-        self._constraintsManager.clear()
+        assert type(self.goal_sampler) == FreeSpaceProximitySampler
+        self.goal_sampler.clear()
+        self.stats_logger.clear()
+        self._constraints_manager.clear()
         # Create free space memories that our goal sampler needs
-        connectedFreeSpace = FreeSpaceModel(self.cfreeSampler)
-        nonConnectedFreeSpace = ExtendedFreeSpaceModel(self.cfreeSampler)
-        self.goalSampler.setConnectedSpace(connectedFreeSpace)
-        self.goalSampler.setNonConnectedSpace(nonConnectedFreeSpace)
+        connected_free_space = FreeSpaceModel(self.c_free_sampler)
+        non_connected_free_space = ExtendedFreeSpaceModel(self.c_free_sampler)
+        self.goal_sampler.set_connected_space(connected_free_space)
+        self.goal_sampler.set_non_connected_space(non_connected_free_space)
         # Create forward tree
-        forwardTree = RTreeTree(SampleData(startConfig), self.cfreeSampler.getSpaceDimension(),
-                               self.cfreeSampler.getScalingFactors())
-        self._constraintsManager.register_new_tree(forwardTree)
-        connectedFreeSpace.addTree(forwardTree)
+        forward_tree = RTreeTree(SampleData(start_config), self.c_free_sampler.get_space_dimension(),
+                                 self.c_free_sampler.get_scaling_factors())
+        self._constraints_manager.register_new_tree(forward_tree)
+        connected_free_space.add_tree(forward_tree)
         # Various variable initializations
-        backwardTrees = []
-        goalTreeIds = []
-        pathFound = False
+        backward_trees = []
+        goal_tree_ids = []
+        b_path_found = False
         path = None
-        bSearchingForward = True
+        b_searching_forward = True
         # self.debugConfigList = []
         # Start
-        startTime = timerFunction()
-        debugFunction(forwardTree, backwardTrees)
+        start_time = timer_function()
+        debug_function(forward_tree, backward_trees)
 
         # Main loop
         self.logger.debug('[RRT::proximityBiRRT] Starting planning loop')
-        while timerFunction() < startTime + timeLimit and not pathFound:
-            debugFunction(forwardTree, backwardTrees)
+        while timer_function() < start_time + time_limit and not b_path_found:
+            debug_function(forward_tree, backward_trees)
             p = random.random()
-            pGoal = self.pGoalProvider.computePGoal(len(backwardTrees))
-            self.logger.debug('[RRT::proximityBiRRT] Rolled a dice: ' + str(p) + '. pGoal is ' +
-                              str(pGoal))
-            if p < pGoal:
-            # if p < self.pGoal or len(backwardTrees) == 0:
+            p_goal = self.p_goal_provider.compute_p_goal(len(backward_trees))
+            self.logger.debug('[RRT::proximityBiRRT] Rolled a die: ' + str(p) + '. p_goal is ' +
+                              str(p_goal))
+            if p < p_goal:
                 # Create a new backward tree
                 self.logger.debug('[RRT::proximityBiRRT] Sampling a new goal configuration')
-                goalSample = self.goalSampler.sample()
-                self.statsLogger.numGoalSampled += 1
-                self.logger.debug('[RRT::proximityBiRRT] Sampled a new goal: ' + str(goalSample))
-                if goalSample.isValid():
-                    bTree = RTreeTree(goalSample, self.cfreeSampler.getSpaceDimension(),
-                                      self.cfreeSampler.getScalingFactors(), bForwardTree=False)
-                    self._constraintsManager.register_new_tree(bTree)
-                    if self.goalSampler.is_goal(goalSample):
-                        self.statsLogger.numValidGoalSampled += 1
-                        self.logger.debug('[RRT::proximityBiRRT] Goal sample is valid.' \
-                                          + ' Created new backward tree')
-                        goalTreeIds.append(bTree.getId())
+                goal_sample = self.goal_sampler.sample()
+                self.stats_logger.num_goals_sampled += 1
+                self.logger.debug('[RRT::proximityBiRRT] Sampled a new goal: ' + str(goal_sample))
+                if goal_sample.is_valid():
+                    backward_tree = RTreeTree(goal_sample, self.c_free_sampler.get_space_dimension(),
+                                              self.c_free_sampler.get_scaling_factors(), b_forward_tree=False)
+                    self._constraints_manager.register_new_tree(backward_tree)
+                    if self.goal_sampler.is_goal(goal_sample):
+                        self.stats_logger.num_valid_goals_sampled += 1
+                        self.logger.debug('[RRT::proximityBiRRT] Goal sample is valid.' +
+                                          ' Created new backward tree')
+                        goal_tree_ids.append(backward_tree.get_id())
                     else:
-                        self.statsLogger.numApproxGoalSampled += 1
-                        self.logger.debug('[RRT::proximityBiRRT] Goal sample is valid, but approximate.' \
-                                          + ' Created new approximate backward tree')
-                    self.statsLogger.numBackwardTrees += 1
-                    backwardTrees.append(bTree)
-                    nonConnectedFreeSpace.addTree(bTree)
+                        self.stats_logger.num_approx_goals_sampled += 1
+                        self.logger.debug('[RRT::proximityBiRRT] Goal sample is valid, but approximate.' +
+                                          ' Created new approximate backward tree')
+                    self.stats_logger.num_backward_trees += 1
+                    backward_trees.append(backward_tree)
+                    non_connected_free_space.add_tree(backward_tree)
             else:
                 # Extend search trees
                 self.logger.debug('[RRT::proximityBiRRT] Extending search trees')
-                self._constraintsManager.reset_constraints()
-                randomSample = self.cfreeSampler.sample()
-                self.logger.debug('[RRT::proximityBiRRT] Drew random sample: ' + str(randomSample))
-                self.statsLogger.numCFreeSamples += 1
-                (forwardNode, backwardNode, backwardTree, bConnected) = (None, None, None, False)
-                if bSearchingForward or len(backwardTrees) == 0:
+                self._constraints_manager.reset_constraints()
+                random_sample = self.c_free_sampler.sample()
+                self.logger.debug('[RRT::proximityBiRRT] Drew random sample: ' + str(random_sample))
+                self.stats_logger.num_c_free_samples += 1
+                (forward_node, backward_node, backward_tree, b_connected) = (None, None, None, False)
+                if b_searching_forward or len(backward_trees) == 0:
                     self.logger.debug('[RRT::proximityBiRRT] Extending forward tree to random sample')
-                    (forwardNode, bConnected) = self.extend(forwardTree, randomSample)
-                    self.logger.debug('[RRT::proximityBiRRT] Forward tree connected to sample: ' + str(bConnected))
-                    self.logger.debug('[RRT::proximityBiRRT] New forward tree node: ' + str(forwardNode))
-                    if len(backwardTrees) > 0:
-                        self.logger.debug('[RRT::proximityBiRRT] Attempting to connect forward tree ' \
-                                          + 'to backward tree')
-                        (backwardTree, nearestNode) = \
-                            self._biRRT_helper_nearestTree(forwardNode.getSampleData(), backwardTrees)
-                        (backwardNode, bConnected) = self.extend(backwardTree, forwardNode.getSampleData())
+                    (forward_node, b_connected) = self.extend(forward_tree, random_sample)
+                    self.logger.debug('[RRT::proximityBiRRT] Forward tree connected to sample: ' + str(b_connected))
+                    self.logger.debug('[RRT::proximityBiRRT] New forward tree node: ' + str(forward_node))
+                    if len(backward_trees) > 0:
+                        self.logger.debug('[RRT::proximityBiRRT] Attempting to connect forward tree ' +
+                                          'to backward tree')
+                        (backward_tree, nearest_node) = \
+                            self.pick_nearest_tree(forward_node.get_sample_data(), backward_trees)
+                        (backward_node, b_connected) = self.extend(backward_tree, forward_node.get_sample_data())
                     else:
-                        bConnected = False
+                        b_connected = False
                 else:
                     self.logger.debug('[RRT::proximityBiRRT] Extending backward tree to random sample')
                     # TODO try closest tree instead
-                    backwardTree = self._proximityBiRRT_helper_pickBackwardTree(backwardTrees,
-                                                                                goalTreeIds)
-                    # (backwardTree, nearestNode) = self._biRRT_helper_nearestTree(randomSample, backwardTrees)
-                    if backwardTree.getId() in goalTreeIds:
+                    backward_tree = self.pick_backward_tree(backward_trees,
+                                                            goal_tree_ids)
+                    # (backward_tree, nearest_node) = self._biRRT_helper_nearestTree(random_sample, backward_trees)
+                    if backward_tree.get_id() in goal_tree_ids:
                         self.logger.debug('[RRT::proximityBiRRT] Attempting to connect goal tree!!!!')
-                    (backwardNode, bConnected) = self.extend(backwardTree, randomSample)
-                    self.logger.debug('[RRT::proximityBiRRT] New backward tree node: ' + str(backwardNode))
-                    self.logger.debug('[RRT::proximityBiRRT] Backward tree connected to sample: ' \
-                                      + str(bConnected))
-                    self.logger.debug('[RRT::proximityBiRRT] Attempting to connect forward tree ' \
-                                      + 'to backward tree ' + str(backwardTree.getId()))
-                    (forwardNode, bConnected) = self.extend(forwardTree, backwardNode.getSampleData())
-                self.statsLogger.numAttemptedTreeConnects += 1
-                if bConnected:
+                    (backward_node, b_connected) = self.extend(backward_tree, random_sample)
+                    self.logger.debug('[RRT::proximityBiRRT] New backward tree node: ' + str(backward_node))
+                    self.logger.debug('[RRT::proximityBiRRT] Backward tree connected to sample: ' +
+                                      str(b_connected))
+                    self.logger.debug('[RRT::proximityBiRRT] Attempting to connect forward tree ' +
+                                      'to backward tree ' + str(backward_tree.get_id()))
+                    (forward_node, b_connected) = self.extend(forward_tree, backward_node.get_sample_data())
+                self.stats_logger.num_attempted_tree_connects += 1
+                if b_connected:
                     self.logger.debug('[RRT::proximityBiRRT] Trees connected')
-                    self.statsLogger.numSuccessfulTreeConnects += 1
-                    treeName = 'merged_backward_tree' + str(self.statsLogger.numSuccessfulTreeConnects)
-                    self.statsLogger.treeSizes[treeName] = backwardTree.size()
-                    rootB = forwardTree.merge(forwardNode, backwardTree, backwardNode)
-                    backwardTrees.remove(backwardTree)
-                    nonConnectedFreeSpace.removeTree(backwardTree.getId())
+                    self.stats_logger.num_successful_tree_connects += 1
+                    tree_name = 'merged_backward_tree' + str(self.stats_logger.num_successful_tree_connects)
+                    self.stats_logger.treeSizes[tree_name] = backward_tree.size()
+                    root_b = forward_tree.merge(forward_node, backward_tree, backward_node)
+                    backward_trees.remove(backward_tree)
+                    non_connected_free_space.remove_tree(backward_tree.get_id())
                     # Check whether we connected to a goal tree or not
-                    if backwardTree.getId() in goalTreeIds:
-                        goalTreeIds.remove(backwardTree.getId())
-                        path = forwardTree.extractPath(rootB)
-                        pathFound = True
+                    if backward_tree.get_id() in goal_tree_ids:
+                        goal_tree_ids.remove(backward_tree.get_id())
+                        path = forward_tree.extract_path(root_b)
+                        b_path_found = True
                         self.logger.debug('[RRT::proximityBiRRT] Found a path!')
-                bSearchingForward = not bSearchingForward
+                b_searching_forward = not b_searching_forward
 
-        self.statsLogger.treeSizes['forward_tree'] = forwardTree.size()
-        for bwTree in backwardTrees:
-            self.statsLogger.treeSizes['unmerged_backward_tree' + str(bwTree.getId())] = bwTree.size()
-        debugFunction(forwardTree, backwardTrees)
-        self.goalSampler.debugDraw()
-        self.statsLogger.numGoalNodesSampled = self.goalSampler.getNumGoalNodesSampled()
-        self.statsLogger.runtime = timerFunction() - startTime
+        self.stats_logger.treeSizes['forward_tree'] = forward_tree.size()
+        for bw_tree in backward_trees:
+            self.stats_logger.treeSizes['unmerged_backward_tree' + str(bw_tree.get_id())] = bw_tree.size()
+        debug_function(forward_tree, backward_trees)
+        self.goal_sampler.debug_draw()
+        self.stats_logger.num_goal_nodes_sampled = self.goal_sampler.get_num_goal_nodes_sampled()
+        self.stats_logger.runtime = timer_function() - start_time
         if path is not None:
-            self.statsLogger.finalGraspQuality = self.goalSampler.getQuality(path[-1])
-            self.statsLogger.success = 1
-        return self.shortcut(path, shortcutTime)
+            self.stats_logger.final_grasp_quality = self.goal_sampler.get_quality(path[-1])
+            self.stats_logger.success = 1
+        return self.shortcut(path, shortcut_time)
 
-    def _proximityBiRRT_helper_pickBackwardTree(self, backwardTrees, goalTreeIds):
+    def pick_backward_tree(self, backward_trees, goal_tree_ids):
         p = random.random()
-        goalTrees = [x for x in backwardTrees if x.getId() in goalTreeIds]
-        nonGoalTrees = [x for x in backwardTrees if x.getId() not in goalTreeIds]
-        if p < self.pGoalTree and len(goalTreeIds) > 0:
-            return random.choice(goalTrees)
-        elif len(nonGoalTrees) > 0:
-            return random.choice(nonGoalTrees)
-        elif len(backwardTrees) > 0: # this may happen if we have only goal trees, but p >= self.pGoalTree
-            return random.choice(backwardTrees)
+        goal_trees = [x for x in backward_trees if x.get_id() in goal_tree_ids]
+        non_goal_trees = [x for x in backward_trees if x.get_id() not in goal_tree_ids]
+        if p < self.p_goal_tree and len(goal_tree_ids) > 0:
+            return random.choice(goal_trees)
+        elif len(non_goal_trees) > 0:
+            return random.choice(non_goal_trees)
+        elif len(backward_trees) > 0:  # this may happen if we have only goal trees, but p >= self.pGoalTree
+            return random.choice(backward_trees)
         else:
             raise ValueError('We do not have any backward trees to pick from')
 
-#     def _biRRT_helper_sampleGoal(self, backwardTrees):
-        # goalSample = self.goalSampler.sample(False)
-        # # print 'sampled a new goal....'
-        # if not goalSample.isValid():
-            # return
-        # if len(backwardTrees) > 0:
-            # bTree = random.choice(backwardTrees)
-            # (newNode, bConnected) = self.extend(bTree, goalSample)
-            # if bConnected:
-                # bTree.addLabeledNode(newNode)
-                # # print '...added it to existing tree'
-                # return
-            # # print '...only extended towards it'
-
-        # bTree = RTreeTree(goalSample, self.cfreeSampler.getSpaceDimension())
-        # backwardTrees.append(bTree)
-        # # print '...created new tree ', len(backwardTrees)
-
-    # def _biRRT_helper_growTree(self, tree, sample=None):
-        # if sample is None:
-            # sample = self.cfreeSampler.sample()
-        # if sample.isValid():
-            # self.extend(tree, sample)
-
-#     def _biRRT_helper_connectTrees(self, treeA, treeB):
-        # randomSample = self.cfreeSampler.sample()
-        # (newNode, bConnected) = self.extend(treeA, randomSample)
-        # (newNodeB, bConnected) = self.extend(treeB, newNode.getSampleData())
-        # if bConnected:
-            # rootB = treeA.merge(newNode, treeB, newNodeB)
-            # treeA.addLabeledNode(rootB)
-        # return bConnected
-
-    def _biRRT_helper_greedilyRefineHotRegion(self, goalCandidate, tree):
-        self.logger.debug('[RRT:_biRRT_helper_greedilyRefineHotRegion] refining hot region...')
-        goalSample = self.goalSampler.refineAndSample(goalCandidate)
-        bConnected = True
-        while goalSample.isValid() and bConnected:
-            self.logger.debug('[RRT:_biRRT_helper_greedilyRefineHotRegion] Attempting to connect to new goal...')
-            (newNode, bConnected) = self.extend(tree, goalSample)
-            if self.goalSampler.is_goal(goalSample) and bConnected:
-                # print '...we connected to a goal'
-                self.logger.debug('[RRT:_biRRT_helper_greedilyRefineHotRegion] Connected to a final goal!')
-                return (True, tree.extractPath(newNode), None)
-            elif bConnected:
-                self.logger.debug('[RRT:_biRRT_helper_greedilyRefineHotRegion] Connected to approx goal!')
-                goalSample = self.goalSampler.refineAndSample(goalSample)
-            else:
-                self.logger.debug('[RRT:_biRRT_helper_greedilyRefineHotRegion] Failed to connect, creating' \
-                                  + ' new tree')
-                self.statsLogger.numGreedyRefinesFailed += 1
-                return (False, None, \
-                        RTreeTree(goalSample, self.cfreeSampler.getSpaceDimension(), bForwardTree=False))
-        self.logger.debug('[RRT:_biRRT_helper_greedilyRefineHotRegion] Last goal sample was invalid, failed!')
-        self.statsLogger.numGreedyRefinesFailed += 1
-        return (False, None, None)
-
-    def _biRRT_helper_checkForGoal(self, tree):
-        # print 'checking whether we connected to a goal'
-        for lnode in tree.getLabeledNodes():
-            goalCandidate = lnode.getSampleData()
-            if self.goalSampler.is_goal(goalCandidate):
-                # print 'Found a goal!!!!'
-                return (True, tree.extractPath(lnode), None)
-            else:
-                self.statsLogger.numGreedyRefines += 1
-                (pathFound, path, bTree) = self._biRRT_helper_greedilyRefineHotRegion(goalCandidate, tree)
-                if pathFound:
-                    return (pathFound, path, bTree)
-                # self.goalSampler.refineGoalSampling(goalCandidate)
-        tree.clearLabeledNodes()
-
-        return (False, None, None)
-
-    def shortcut(self, path, timeLimit):
+    def shortcut(self, path, time_limit):
         if path is None:
             return None
-        self.logger.debug('[RRT::shortcut] Shortcutting path of length %i with timelimit %f' % (len(path),
-                                                                                                timeLimit))
-        startTime = time.clock()
-        allPairs = [(i,j) for i in range(len(path)) for j in range(i+2, len(path))]
-        random.shuffle(allPairs)
-        while time.clock() < startTime + timeLimit and len(allPairs) > 0:
-            indexPair = allPairs.pop()
-            (bSuccess, samples) = self.cfreeSampler.interpolate(path[indexPair[0]], path[indexPair[1]])
+        self.logger.debug('[RRT::shortcut] Shortcutting path of length %i with time limit %f' % (len(path),
+                                                                                                 time_limit))
+        start_time = time.clock()
+        all_pairs = [(i, j) for i in range(len(path)) for j in range(i + 2, len(path))]
+        random.shuffle(all_pairs)
+        while time.clock() < start_time + time_limit and len(all_pairs) > 0:
+            index_pair = all_pairs.pop()
+            (bSuccess, samples) = self.c_free_sampler.interpolate(path[index_pair[0]], path[index_pair[1]])
             if bSuccess:
-                path[indexPair[0] + 1:] = path[indexPair[1]:]
-                allPairs = [(i,j) for i in range(len(path)) for j in range(i+2, len(path))]
-                random.shuffle(allPairs)
+                path[index_pair[0] + 1:] = path[index_pair[1]:]
+                all_pairs = [(i, j) for i in range(len(path)) for j in range(i + 2, len(path))]
+                random.shuffle(all_pairs)
         self.logger.debug('[RRT::shortcut] Shorcutting finished. New path length %i' % len(path))
         return path
-
-    def classicalRRT(self, startConfig, timeLimit=60, debugFunction=lambda x: x):
-        """ Classical RRT algorithm """
-        self.goalSampler.clear()
-        startSample = SampleData(startConfig)
-        tree = RTreeTree(startSample, self.cfreeSampler.getSpaceDimension())
-        solutionFound = False
-        startTime = time.clock()
-        goalNode = None
-        debugFunction(tree)
-        while time.clock() < startTime + timeLimit and not solutionFound:
-            p = random.random()
-            if (p > self.pGoal):
-                randomSample = self.cfreeSampler.sample()
-            else:
-                randomSample = self.goalSampler.sample()
-            if not randomSample.isValid():
-                continue
-            (newNode, bConnected) = self.extend(tree, randomSample)
-
-            if (self.goalSampler.is_goal(newNode.getSampleData())):
-                solutionFound = True
-                goalNode = newNode
-            debugFunction(tree)
-
-        if solutionFound:
-            self.logger.info('Found a solution!')
-            return tree.extractPath(goalNode)
-        return None
-
-    def classicalBiRRT(self, startConfig, timeLimit=60, debugFunction=lambda x, y: None):
-        """ Bidirectional RRT algorithm. """
-        return self.biRRT(startConfig=startConfig, timeLimit=timeLimit, useHierarchy=False, debugFunction=debugFunction)
-

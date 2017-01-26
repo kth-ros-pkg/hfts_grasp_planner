@@ -13,19 +13,20 @@ from sampler import CSpaceSampler
 NUMERICAL_EPSILON = 0.00001
 MINIMAL_STEP_LENGTH = 0.001
 
+
 class GraspApproachConstraint(Constraint):
-    def __init__(self, orEnv, robot, stateSampler, objName, open_hand_config, activationDistance=0.4):
-        self.orEnv = orEnv
+    def __init__(self, or_env, robot, state_sampler, obj_name, open_hand_config, activation_distance=0.4):
+        self.or_env = or_env
         self.robot = robot
         self.manip = robot.GetActiveManipulator()
-        self.dofIndices = robot.GetActiveDOFIndices()
+        self.dof_indices = robot.GetActiveDOFIndices()
         self.open_hand_config = open_hand_config
-        self.objName = objName
-        self.activationDistance = activationDistance
+        self.obj_name = obj_name
+        self.activation_distance = activation_distance
         self.debug = False
-        self.stateSampler = stateSampler
+        self.state_sampler = state_sampler
 
-    def checkAABBIntersection(self, aabb1, aabb2):
+    def check_aabb_intersection(self, aabb1, aabb2):
         b_boxes_intersect = True
         mins_1 = aabb1.pos() - aabb1.extents()
         maxs_1 = aabb1.pos() + aabb1.extents()
@@ -35,21 +36,21 @@ class GraspApproachConstraint(Constraint):
             b_boxes_intersect = b_boxes_intersect and (mins_1[i] <= maxs_2[i] or mins_2[i] <= maxs_1[i])
         return b_boxes_intersect
 
-    def isActive(self, oldConfig, config):
-        with self.orEnv:
-            origValues = self.robot.GetDOFValues()
-            self.robot.SetDOFValues(oldConfig)
-            eefPose = self.manip.GetEndEffectorTransform()
-            theObject = self.orEnv.GetKinBody(self.objName)
-            objPose = theObject.GetTransform()
-            distance = numpy.linalg.norm(eefPose[:3, 3] - objPose[:3, 3])
-            self.robot.SetDOFValues(origValues)
-            if distance < self.activationDistance:
-                return not self.stateSampler.isValid(config)
+    def is_active(self, old_config, config):
+        with self.or_env:
+            orig_values = self.robot.GetDOFValues()
+            self.robot.SetDOFValues(old_config)
+            eef_pose = self.manip.GetEndEffectorTransform()
+            the_object = self.or_env.GetKinBody(self.obj_name)
+            obj_pose = the_object.GetTransform()
+            distance = numpy.linalg.norm(eef_pose[:3, 3] - obj_pose[:3, 3])
+            self.robot.SetDOFValues(orig_values)
+            if distance < self.activation_distance:
+                return not self.state_sampler.is_valid(config)
             return False
 
-    def heuristicGradient(self, config):
-        with self.orEnv:
+    def heuristic_gradient(self, config):
+        with self.or_env:
             old_values = self.robot.GetDOFValues()
             # Set the old configuration
             self.robot.SetDOFValues(config)
@@ -65,7 +66,7 @@ class GraspApproachConstraint(Constraint):
             else:
                 hand_gradient = len(hand_dofs) * [0.0]
             # Now compute the arm configuration gradient
-            the_object = self.orEnv.GetKinBody(self.objName)
+            the_object = self.or_env.GetKinBody(self.obj_name)
             obj_pose = the_object.GetTransform()
             eef_pose = self.manip.GetEndEffectorTransform()
             inv_approach_dir = eef_pose[:3, 3] - obj_pose[:3, 3]
@@ -81,22 +82,22 @@ class GraspApproachConstraint(Constraint):
             self.robot.SetDOFValues(old_values)
             return 1.0 / numpy.linalg.norm(gradient) * gradient
 
-    def project(self, oldConfig, config):
-        with self.orEnv:
-            if self.isActive(oldConfig, config):
-                configDir = config - oldConfig
+    def project(self, old_config, config):
+        with self.or_env:
+            if self.is_active(old_config, config):
+                config_dir = config - old_config
                 # logging.debug('[GraspApproachConstraint::project] config: ' + str(config) + ' oldConfig: ' +
                 #              str(oldConfig))
-                hDir = self.heuristicGradient(oldConfig)
-                if hDir is None:
-                    logging.warn('[GraspApproachConstraint::project] The heursitic gradient is None')
+                h_dir = self.heuristic_gradient(old_config)
+                if h_dir is None:
+                    logging.warn('[GraspApproachConstraint::project] The heuristic gradient is None')
                     return config
-                deltaStep = numpy.dot(configDir, hDir)
+                delta_step = numpy.dot(config_dir, h_dir)
                 logging.debug('[GraspApproachConstraint::project] Projecting configuration to free' +
-                              'space, deltaStep: ' + str(deltaStep))
-                if deltaStep <= MINIMAL_STEP_LENGTH: # 0.0:
+                              'space, delta_step: ' + str(delta_step))
+                if delta_step <= MINIMAL_STEP_LENGTH: # 0.0:
                     return config
-                return oldConfig + deltaStep * hDir
+                return old_config + delta_step * h_dir
             # logging.debug('[GraspApproachConstraint::project] Not active')
             return config
 
@@ -116,78 +117,79 @@ class GraspApproachConstraintsManager(ConstraintsManager):
     def register_new_tree(self, tree):
         new_constraints = []
         # Except for the forward tree, create GraspApproachConstraints
-        if not tree._bForwardTree:
+        if not tree._b_forward_tree:
             # TODO: set activation distance based on object size
             new_constraints.append(GraspApproachConstraint(self.or_env, self.or_robot, self.space_sampler,
                                                            self.object_name, self.open_hand_config))
-        self._constraints_storage[tree.getId()] = new_constraints
+        self._constraints_storage[tree.get_id()] = new_constraints
+
 
 class RobotCSpaceSampler(CSpaceSampler):
-    def __init__(self, orEnv, robot, scalingFactors=None):
-        self.orEnv = orEnv
+    def __init__(self, or_env, robot, scaling_factors=None):
+        self.or_env = or_env
         self.robot = robot
-        self.dofIndices = self.robot.GetActiveDOFIndices()
+        self.dof_indices = self.robot.GetActiveDOFIndices()
         self.dim = self.robot.GetActiveDOF()
         self.limits = self.robot.GetActiveDOFLimits()
-        if scalingFactors is None:
-            self._scalingFactors = self.dim * [1]
+        if scaling_factors is None:
+            self._scaling_factors = self.dim * [1]
         else:
-            self._scalingFactors = scalingFactors
+            self._scaling_factors = scaling_factors
 
     def sample(self):
-        validSample = False
-        randomSample = numpy.zeros(self.dim)
-        while not validSample:
+        valid_sample = False
+        random_sample = numpy.zeros(self.dim)
+        while not valid_sample:
             for i in range(self.dim):
-                randomSample[i] = random.uniform(self.limits[0][i], self.limits[1][i])
-            validSample = self.isValid(randomSample)
-        result = SampleData(randomSample)
+                random_sample[i] = random.uniform(self.limits[0][i], self.limits[1][i])
+            valid_sample = self.is_valid(random_sample)
+        result = SampleData(random_sample)
         return result
 
-    def sampleGaussianNeighborhood(self, config, stdev):
-        newConfig = numpy.copy(config)
-        for dim in range(len(newConfig)):
-            newConfig[dim] = random.gauss(config[dim], stdev)
-        return newConfig
+    def sample_gaussian_neighborhood(self, config, stdev):
+        new_config = numpy.copy(config)
+        for dim in range(len(new_config)):
+            new_config[dim] = random.gauss(config[dim], stdev)
+        return new_config
 
-    def isValid(self, qcheck):
-        inLimits = False
-        inCollision = True
+    def is_valid(self, qcheck):
+        in_limits = False
+        in_collision = True
         limits = zip(self.limits[0], self.limits[1])
-        limitsAndValues = zip(limits, qcheck)
-        inLimits = reduce(lambda x, y: x and y,
-                          map(lambda tpl: tpl[0][0] - NUMERICAL_EPSILON <= tpl[1] and
-                              tpl[1] <= tpl[0][1] + NUMERICAL_EPSILON, limitsAndValues))
-        if inLimits:
-            with self.orEnv:
+        limits_and_values = zip(limits, qcheck)
+        in_limits = reduce(lambda x, y: x and y,
+                           map(lambda tpl: tpl[0][0] - NUMERICAL_EPSILON <= tpl[1] <= tpl[0][1] + NUMERICAL_EPSILON,
+                               limits_and_values))
+        if in_limits:
+            with self.or_env:
                 # Save old values
-                origValues = self.robot.GetDOFValues()
-                activeIndices = self.robot.GetActiveDOFIndices()
+                orig_values = self.robot.GetDOFValues()
+                active_indices = self.robot.GetActiveDOFIndices()
                 # Set values we wish to test
-                self.robot.SetActiveDOFs(self.dofIndices)
+                self.robot.SetActiveDOFs(self.dof_indices)
                 self.robot.SetActiveDOFValues(qcheck)
                 # Do collision tests
-                inCollision = self.orEnv.CheckCollision(self.robot) or self.robot.CheckSelfCollision()
+                in_collision = self.or_env.CheckCollision(self.robot) or self.robot.CheckSelfCollision()
                 # Restore previous state
-                self.robot.SetActiveDOFs(activeIndices)
-                self.robot.SetJointValues(origValues)
-        return inLimits and not inCollision
+                self.robot.SetActiveDOFs(active_indices)
+                self.robot.SetJointValues(orig_values)
+        return in_limits and not in_collision
 
-    def getSamplingStep(self):
+    def get_sampling_step(self):
         # TODO compute sampling step based on joint value range or sth
         return 0.05
 
-    def getSpaceDimension(self):
+    def get_space_dimension(self):
         return self.dim
 
-    def getUpperBounds(self):
+    def get_upper_bounds(self):
         return numpy.array(self.robot.GetActiveDOFLimits()[1])
 
-    def getLowerBounds(self):
+    def get_lower_bounds(self):
         return numpy.array(self.robot.GetActiveDOFLimits()[0])
 
-    def getScalingFactors(self):
-        return self._scalingFactors
+    def get_scaling_factors(self):
+        return self._scaling_factors
 
 if __name__ == "__main__":
     raise NotImplementedError('Test not implemented')

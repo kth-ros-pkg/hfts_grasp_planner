@@ -182,11 +182,12 @@ class HFTSSampler:
         object_io = ObjectFileIO(data_path, model_id)
         self._data_labeled, self._branching_factors = object_io.getHFTS()
         self._num_levels = len(self._branching_factors)
-        # Before loading the object, run through all kinbodies in the scene and remove old ones
-        for body in self._orEnv.GetBodies():
-            if body.GetName() != self._robot.GetName():
-                self._orEnv.Remove(body)
+        # First, delete old object if there is any
+        if self._obj_loaded:
+            self._orEnv.Remove(self._obj)
         self._obj_loaded = self._orEnv.Load(data_path + '/' + model_id + '/objectModel' + object_io.getObjFileExtension())
+        if not self._obj_loaded:
+            raise RuntimeError('Could not load object model %s at location %s' % (model_id, data_path))
         self._obj = self._orEnv.GetKinBody('objectModel')
         self._obj_com = object_io.getObjCOM()
         rospy.loginfo('Object loaded in OpenRAVE environment')
@@ -226,7 +227,7 @@ class HFTSSampler:
             raise ValueError('HFTSSampler::sample_grasp input node has an invalid depth')
             
         if node.get_depth() + depth_limit >= self._num_levels:
-            depth_limit = self._num_levels - node.get_depth() - 1 # cap
+            depth_limit = self._num_levels - node.get_depth() # cap
 
         seed_ik = None
         if node.get_depth() == 0: # at root
@@ -263,8 +264,9 @@ class HFTSSampler:
                     contact_label = labels_tmp
                     best_o = o_tmp
 
-            # descend to next level
-            best_o, contact_label = self.extend_hfts_node(contact_label)
+            # descend to next level if we iterate at least once more
+            if depth_limit > 0:
+                best_o, contact_label = self.extend_hfts_node(contact_label)
             depth_limit -= 1
 
         # Create output

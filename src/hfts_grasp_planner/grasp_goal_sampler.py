@@ -52,7 +52,7 @@ class GraspGoalSampler:
         config = sampled_node.get_arm_configuration()
         if config is not None:
             config = numpy.concatenate((config, sampled_node.get_pre_grasp_config()))
-        return SamplingResult(configuration=config, hierarchyInfo=sampled_node, dataExtractor=HFTSNodeDataExtractor())
+        return SamplingResult(configuration=config, hierarchy_info=sampled_node, data_extractor=HFTSNodeDataExtractor())
 
     def is_goal(self, sampling_result):
         """ Returns whether the given node is a goal or not. """

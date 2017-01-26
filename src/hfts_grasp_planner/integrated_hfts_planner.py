@@ -8,6 +8,7 @@ from sampler import FreeSpaceProximitySampler
 from rrt import DynamicPGoalProvider, RRT
 from grasp_goal_sampler import GraspGoalSampler
 from core import PlanningSceneInterface
+from hierarchy_visualization import FreeSpaceProximitySamplerVisualizer
 
 class IntegratedHFTSPlanner(object):
     """ Implements a simple to use interface to the integrated HFTS planner. """
@@ -16,8 +17,8 @@ class IntegratedHFTSPlanner(object):
                  dof_weights=None, num_hfts_sampling_steps=4,
                  min_iterations=20, max_iterations=70, p_goal_tree=0.8,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
-                 free_space_weight=0.1, connected_space_weight=4.0, use_approximates=True,
-                 compute_velocities=True, time_limit=60.0):
+                 b_show_traj=False, free_space_weight=0.1, connected_space_weight=4.0,
+                 use_approximates=True, compute_velocities=True, time_limit=60.0):
         """ Creates a new instance of an HFTS planner
             NOTE: It is only possible to display one scene in OpenRAVE at a time. Hence, if the parameters
             b_visualize_system and b_visualize_grasps are both true, only the motion planning scene is shown.
@@ -36,6 +37,7 @@ class IntegratedHFTSPlanner(object):
          @param b_visualize_system Boolean, if True, show OpenRAVE viewer displaying the motion planning scene
          @param b_visualize_grasps Boolean, if True, show OpenRAVE viewer displaying the grasp planning scene
          @param b_visualize_hfts Boolean, if True, show a window with a graph visualization of the explored HFTS space
+         @param b_show_traj Boolean, if True, simulates the trajectory execution in OpenRAVE before returning
          @param free_space_weight Weight (float) for HFTS rating function t(n) for the distance to
             free space configurations
          @param connected_space_weight Weight (float) for HFTS rating function t(n) for the distance to
@@ -56,30 +58,32 @@ class IntegratedHFTSPlanner(object):
         self._robot.SetActiveManipulator(manipulator_name)
         if dof_weights is None:
             dof_weights = self._robot.GetDOF() * [1.0]
-        self._cSampler = RobotCSpaceSampler(self._env, self._robot, scalingFactors=dof_weights)
+        self._cSampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=dof_weights)
         # TODO read these robot-specific specs from a file
         planning_scene_interface = PlanningSceneInterface(self._env, self._robot.GetName())
         self._grasp_planner = GraspGoalSampler(hand_path=hand_file,
                                                planning_scene_interface=planning_scene_interface,
                                                visualize=b_visualize_grasps)
+        hierarchy_visualizer = None
         if b_visualize_hfts:
-            # TODO: implement this
-            raise NotImplementedError('Visualization of HFTS space is not implemented yet.')
+            hierarchy_visualizer = FreeSpaceProximitySamplerVisualizer(self._robot)
         goal_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler, k=num_hfts_sampling_steps,
-                                                 numIterations=max_iterations, minNumIterations=min_iterations,
-                                                 returnApproximates=use_approximates,
-                                                 connectedWeight=connected_space_weight,
-                                                 freeSpaceWeight=free_space_weight)
+                                                 num_iterations=max_iterations, min_num_iterations=min_iterations,
+                                                 b_return_approximates=use_approximates,
+                                                 connected_weight=connected_space_weight,
+                                                 free_space_weight=free_space_weight,
+                                                 debug_drawer=hierarchy_visualizer)
         # TODO the open hand configuration should be given from a configuration file
         self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot,
                                                                     self._cSampler, numpy.array([0.0, 0.0495]))
         p_goal_provider = DynamicPGoalProvider()
         # TODO think about how to make ROS logger run with this
         self._rrt_planner = RRT(p_goal_provider, self._cSampler, goal_sampler, logging.getLogger(),
-                                pGoalTree=p_goal_tree, constraintsManager=self._constraints_manager)
+                                pgoal_tree=p_goal_tree, constraints_manager=self._constraints_manager)
         self._time_limit = time_limit
         self._last_path = None
         self._compute_velocities = compute_velocities
+        self._b_show_trajectory = b_show_traj
 
     def load_object(self, obj_file_path, obj_id, model_id=None):
         self._constraints_manager.set_object_name(obj_id)
@@ -88,14 +92,14 @@ class IntegratedHFTSPlanner(object):
     def get_robot(self):
         return self._robot
 
-    def create_or_trajectory(self, path, vel_factor=0.02):
+    def create_or_trajectory(self, path, vel_factor=0.2):
         if path is None:
             return None
-        configurations_path = map(lambda x: x.getConfiguration(), path)
+        configurations_path = map(lambda x: x.get_configuration(), path)
         # The path ends in a pre-grasp configuration.
         # The final grasp configuration is stored as additional data in the last waypoint,
         # so we need to construct the final configuration here.
-        grasp_hand_config = path[-1].getData()
+        grasp_hand_config = path[-1].get_data()
         last_config = numpy.array(configurations_path[-1])
         hand_idxs = self._robot.GetActiveManipulator().GetGripperIndices()
         assert len(hand_idxs) == len(grasp_hand_config)
@@ -120,13 +124,15 @@ class IntegratedHFTSPlanner(object):
         return traj
 
     def plan(self, start_configuration):
-        self._last_path = self._rrt_planner.proximityBiRRT(start_configuration, timeLimit=self._time_limit)
+        self._last_path = self._rrt_planner.proximity_birrt(start_configuration, time_limit=self._time_limit)
         if self._compute_velocities:
             self._last_traj = self.create_or_trajectory(self._last_path)
+            if self._b_show_trajectory and self._last_traj is not None:
+                controller = self._robot.GetController()
+                controller.SetPath(self._last_traj)
+                self._robot.WaitForController(self._last_traj.GetDuration())
+                controller.Reset()
             return self._last_traj
-        # self._robot.SetDOFValues(self._last_path[-1].getConfiguration())
-        # import IPython
-        # IPython.embed()
         return self._last_path
 
     def set_parameters(self, min_iterations=None, max_iterations=None,
