@@ -156,12 +156,12 @@ class HFTSGenerator:
             rospy.loginfo('HFTS generation finished')
             return None
 
-        estimator = KMeans(n_clusters = branch_factor)
+        estimator = KMeans(n_clusters=branch_factor)
         points[:, :3] *= self._pos_weight
         estimator.fit(points)
         return estimator.labels_
 
-    def _compute_hfts(self, curr_points, level = 0):
+    def _compute_hfts(self, curr_points, level=0):
         if level >= self._level_n:
             return
         idx = curr_points[:, 0].astype(int)
@@ -253,6 +253,14 @@ def vec_angel_diff(v0, v1):
     x = min(1.0, max(-1.0, x)) # fixing math precision error
     angel = math.acos(x)
     return angel
+
+def dist_in_range(d, r):
+    if d < r[0]:
+        return r[0] - d
+    elif d > r[1]:
+        return d - r[1]
+    else:
+        return 0.0
 
 
 class OpenRAVEDrawer:

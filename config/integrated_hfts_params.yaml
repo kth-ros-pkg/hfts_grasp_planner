@@ -15,4 +15,4 @@ manipulator_name: arm_with_robotiq
 free_space_weight: 0.5
 connected_space_weight: 4.0
 use_approximates: True
-time_limit: 600
+time_limit: 6000

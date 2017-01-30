@@ -167,9 +167,9 @@ class HFTSSampler:
     def load_hand(self, hand_file):
         if not self._hand_loaded:
             # TODO make this Robotiq hand independent (external hand loader)
-            self._robot = RobotiqHand(env=self._orEnv, handFile=hand_file)
-            self._hand_manifold = self._robot.getHandMani()
-            self._num_contacts = self._robot.getContactNumber()
+            self._robot = RobotiqHand(env=self._orEnv, hand_file=hand_file)
+            self._hand_manifold = self._robot.get_hand_manifold()
+            self._num_contacts = self._robot.get_contact_number()
             shift = transformations.identity_matrix()
             shift[0, -1] = 0.2
             self._robot.SetTransform(shift)
@@ -314,7 +314,7 @@ class HFTSSampler:
 
         depth = len(contact_label[0])
         possible_num_children, possible_num_leaves = self.get_branch_information(depth)
-        return HFTSNode(labels=contact_label, hand_conf=grasp_conf,
+        return HFTSNode(labels=contact_label, hand_conf=np.asarray(grasp_conf),
                         pre_grasp_conf=pre_grasp_conf, arm_conf=arm_conf,
                         is_goal=is_goal_sample, is_leaf=is_leaf, is_valid=collision_free_arm_ik,
                         num_possible_children=possible_num_children, num_possible_leaves=possible_num_leaves,
@@ -324,7 +324,7 @@ class HFTSSampler:
         # TODO this method as it is right now is only useful for the Robotiq hand.
         self._robot.SetDOFValues(grasp_conf)
         try:
-            T = self._robot.HandObjTransform(fingertip_poses[:3, :3], self._grasp_contacts[:, :3])
+            T = self._robot.hand_obj_transform(fingertip_poses[:3, :3], self._grasp_contacts[:, :3])
             self._robot.SetTransform(T)
         except:
             # TODO figure out what exceptions we expect here and wanna catch
@@ -335,7 +335,7 @@ class HFTSSampler:
         self.swap_contacts([0, 1])
         self._robot.SetDOFValues(grasp_conf)
         try:
-            T = self._robot.HandObjTransform(fingertip_poses[:3, :3], self._grasp_contacts[:, :3])
+            T = self._robot.hand_obj_transform(fingertip_poses[:3, :3], self._grasp_contacts[:, :3])
             self._robot.SetTransform(T)
         except:
             return False
@@ -349,9 +349,9 @@ class HFTSSampler:
             contacts.append(list(p) + list(n))
         # TODO make this to a non-object-global variable
         self._grasp_contacts = np.asarray(contacts)
-        code_tmp = self._hand_manifold.encodeGrasp(self._grasp_contacts)
-        dummy, grasp_conf  = self._hand_manifold.predictHandConf(code_tmp)
-        grasp_pose = self._robot.getOriTipPN(grasp_conf)
+        code_tmp = self._hand_manifold.encode_grasp(self._grasp_contacts)
+        dummy, grasp_conf  = self._hand_manifold.predict_hand_conf(code_tmp)
+        grasp_pose = self._robot.get_ori_tip_pn(grasp_conf)
         return grasp_conf, grasp_pose
 
     def extend_hfts_node(self, old_labels):
@@ -382,9 +382,9 @@ class HFTSSampler:
             p, n = self.cluster_repr(contact_label[i])
             contacts.append(list(p) + list(n))
         contacts = np.asarray(contacts)
-        s_tmp = self._hand_manifold.computeGraspQuality(self._obj_com, contacts)
-        code_tmp = self._hand_manifold.encodeGrasp(contacts)
-        r_tmp, dummy = self._hand_manifold.predictHandConf(code_tmp)
+        s_tmp = self._hand_manifold.compute_grasp_quality(self._obj_com, contacts)
+        code_tmp = self._hand_manifold.encode_grasp(contacts)
+        r_tmp, dummy = self._hand_manifold.predict_hand_conf(code_tmp)
         # o_tmp = s_tmp - self._alpha * r_tmp
         # TODO: Research topic. This is kind of hack. Another objective function might be better
         o_tmp = s_tmp / (r_tmp + 0.000001)
@@ -466,14 +466,14 @@ class HFTSSampler:
                 break
 
     def are_fingertips_in_contact(self):
-        links = self._robot.getFingertipLinks()
+        links = self._robot.get_fingertip_links()
         for link in links:
             if not self._orEnv.CheckCollision(self._robot.GetLink(link)):
                 return False
         return True
     
     def is_grasp_collision_free(self):
-        links = self._robot.getNonFingertipLinks()
+        links = self._robot.get_non_fingertip_links()
         for link in links:
             if self._orEnv.CheckCollision(self._robot.GetLink(link)):
                 return False

@@ -5,7 +5,7 @@
         <body name="hand_palm">
             <offsetfrom>iiwa.link7</offsetfrom>
             <translation>0.0 0.0 0.05</translation>
-            <!--<rotationaxis>1 0 0 -90</rotationaxis>-->
+            <rotationaxis>0 0 1 -90</rotationaxis>
         </body>
         <joint name="iiwa_robotiq_dummy_joint" type="hinge" enable="false">
             <body>iiwa.link7</body>
