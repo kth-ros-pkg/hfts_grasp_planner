@@ -3,6 +3,8 @@ import transformations
 import math
 from utils import vec_angel_diff, dist_in_range
 
+# TODO this should be specified in a configuration file
+LAST_FINGER_JOINT = 'JF20'
 
 # TODO this should be defined in a super module
 class InvalidTriangleException(Exception):
@@ -19,7 +21,7 @@ class RobotiqHand:
         self._or_env.Load(hand_file)
         self._or_hand = self._or_env.GetRobots()[0]
         self._plot_handler = []
-        self._hand_mani = RobotiqHandVirtualMainfold(self._or_hand)
+        self._hand_mani = RobotiqHandVirtualManifold(self._or_hand)
     
     def __getattr__(self, attr): # composition
         return getattr(self._or_hand, attr)
@@ -77,7 +79,6 @@ class RobotiqHand:
         tfs = self.get_tip_transforms()
         for t in tfs:
             ret.append(np.concatenate((t[:3, 3], t[:3, 1])))
-        
         return np.asarray(ret)
     
     def get_ori_tip_pn(self, hand_conf):
@@ -129,8 +130,25 @@ class RobotiqHand:
         R = np.dot(np.transpose(frame2), np.linalg.inv(np.transpose(frame1)))
         return R
 
+    """
+        Opens the hand until there is no collision anymore.
+        @param n_step - maximum number of sampling steps
+        @return True if successful, False otherwise
+    """
+    def avoid_collision_at_fingers(self, n_step):
+        if n_step <= 0:
+            n_step = 1
+        finger_joint_idx = self._or_hand.GetJoint(LAST_FINGER_JOINT).GetDOFIndex()
+        start_value = self._or_hand.GetDOFValues()[finger_joint_idx]  # Last joint value opens the fingers
+        step = (self._or_hand.GetDOFLimits()[0][finger_joint_idx] - start_value) / n_step
+        for i in range(n_step):
+            if not self._or_env.CheckCollision(self._or_hand):
+                return True
+            self._or_hand.SetDOFValues([start_value + i * step], [finger_joint_idx])
+        return False
+
     
-class RobotiqHandVirtualMainfold:
+class RobotiqHandVirtualManifold:
     """
         Mimic the hand manifold interface from our ICRA'16 paper,
         it is not needed to model a reachability manifold for the Robotiq-S.
@@ -146,9 +164,7 @@ class RobotiqHandVirtualMainfold:
         upper[1] = 0.93124747
         pos_residual0 = dist_in_range(q[0], range0)
         pos_residual1 = dist_in_range(q[1], range1)
-        angle_residual0 = q[2]
-        angle_residual1 = q[3]
-        
+
         res0 = (upper[0] - lower[0]) / (range0[1] - range0[0])
         res1 = (upper[1] - lower[1]) / (range1[1] - range1[0])
         

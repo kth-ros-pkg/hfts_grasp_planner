@@ -15,7 +15,7 @@ class IntegratedHFTSPlanner(object):
     """ Implements a simple to use interface to the integrated HFTS planner. """
 
     def __init__(self, env_file, hand_file, robot_name, manipulator_name,
-                 dof_weights=None, num_hfts_sampling_steps=4,
+                 data_root_path, dof_weights=None, num_hfts_sampling_steps=4,
                  min_iterations=20, max_iterations=70, p_goal_tree=0.8,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
                  b_show_traj=False, b_show_search_tree=False, free_space_weight=0.1, connected_space_weight=4.0,
@@ -63,12 +63,15 @@ class IntegratedHFTSPlanner(object):
         self._cSampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=dof_weights)
         # TODO read these robot-specific specs from a file
         planning_scene_interface = PlanningSceneInterface(self._env, self._robot.GetName())
-        self._grasp_planner = GraspGoalSampler(hand_path=hand_file,
+        self._grasp_planner = GraspGoalSampler(data_path=data_root_path,
+                                               hand_path=hand_file,
                                                planning_scene_interface=planning_scene_interface,
                                                visualize=b_visualize_grasps)
         hierarchy_visualizer = None
         if b_visualize_hfts:
             hierarchy_visualizer = FreeSpaceProximitySamplerVisualizer(self._robot)
+        if num_hfts_sampling_steps <= 0:
+            num_hfts_sampling_steps = self._grasp_planner.get_max_depth() + 1
         goal_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler, k=num_hfts_sampling_steps,
                                                  num_iterations=max_iterations, min_num_iterations=min_iterations,
                                                  b_return_approximates=use_approximates,
@@ -89,9 +92,9 @@ class IntegratedHFTSPlanner(object):
         self._compute_velocities = compute_velocities
         self._b_show_trajectory = b_show_traj
 
-    def load_object(self, obj_file_path, obj_id, model_id=None):
+    def load_object(self, obj_id, model_id=None):
         self._constraints_manager.set_object_name(obj_id)
-        self._grasp_planner.set_object(obj_path=obj_file_path, obj_id=obj_id, model_id=model_id)
+        self._grasp_planner.set_object(obj_id=obj_id, model_id=model_id)
 
     def get_robot(self):
         return self._robot

@@ -10,119 +10,130 @@ from sklearn.cluster import KMeans as KMeans
 import math, copy, os, itertools
 import matplotlib.pyplot as plt
 from sklearn.neighbors import KDTree
+from stl import mesh as stl_mesh_module
+from abc import ABCMeta, abstractmethod
 import openravepy as orpy
 
 
-class ObjectFileIO:
-    def __init__(self, data_path, object_identifier, var_filter=True):
-        self._obj_id = object_identifier
+class ObjectIO(object):
+    __metaclass__ = ABCMeta
+
+    @abstractmethod
+    def get_hfts(self, obj_id, force_new=False):
+        pass
+
+    @abstractmethod
+    def get_openrave_file_name(self, obj_id):
+        pass
+
+
+class ObjectFileIO(ObjectIO):
+    def __init__(self, data_path, var_filter=True, filter_threshold=0.2):
         self._data_path = data_path
-        self._hfts_file = self._data_path + '/' + self._obj_id + '/hfts.npy'
-        self._hfts_param_file = self._data_path + '/' + self._obj_id + '/hftsParam.npy'
-        self._obj_com_file = self._data_path + '/' + self._obj_id + '/objCOM.npy'
-        self._hfts = None
-        self._hfts_param = None
-        self._obj_com = None
-        self._var_filter = var_filter
-        self._obj_file_ext = None
-        
-    def filter_points(self, points):
-        kdt = KDTree(points[:, :3], leaf_size = 6, metric = 'euclidean')
-        rospy.loginfo('Filtering points for constructing HFTS')
-        vld_idx = np.ones(points.shape[0], dtype=bool)
-        i = 0
-        for p in points:
-            nb_idx = kdt.query([p[:3]], k=20, return_distance=False)[0]
-            nb_points_normals = points[nb_idx, 3:]
-            var = np.var(nb_points_normals, axis = 0)
-            if max(var) > 0.2:
-                vld_idx[i] = False
-            i += 1
-            
-        points = points[vld_idx, :]
+        self._b_var_filter = var_filter
+        self._filter_threshold = filter_threshold
+        self._last_obj_id = None
+        self._last_hfts = None
+        self._last_hfts_param = None
+        self._last_obj_com = None
+
+    def get_points(self, obj_id):
+        obj_file = self._data_path + '/' + obj_id + '/objectModel'
+        file_extension = self.get_obj_file_extension(obj_id)
+        points = None
+        if file_extension == '.ply':
+            points = read_ply_file(obj_file + file_extension)
+        elif file_extension == '.stl':
+            points = read_stl_file(obj_file + file_extension)
+        if points is not None:
+            if self._b_var_filter:
+                points = filter_points(points, self._filter_threshold)
+        else:
+            rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + file_extension +
+                         ' file for object ' + obj_id)
+        # rospy.logwarn('No previous file found in the database, will proceed with raw point cloud instead.')
+        # TODO read point cloud
         return points
-        
-    def get_points(self):
-        obj_file = self._data_path + '/' + self._obj_id + '/objectModel'
-        try:
-            print obj_file + '.ply'
-            points = read_ply_file(obj_file + '.ply')
-            if self._var_filter:
-                points = self.filter_points(points)
-                self._obj_file_ext = '.ply'
-            return points
-        except:
-            rospy.loginfo('[objectFileIO] No valid \".ply\" file found for the object: ' + self._obj_id)
-        # TODO Implement stl support
-        # try:
-        #     points = readStlFile(obj_file + '.stl')
-        #     if self._var_filter:
-        #         points = self.filter_points(points)
-        #         self._obj_file_ext = '.stl'
-        #     return points
-        # except:
-        #     rospy.loginfo('[objectFileIO] No valid \".stl\" file found for the object: ' + self._obj_id)
-        rospy.logwarn('No previous file found in the database, will proceed with raw point cloud instead.')
+
+    def get_obj_file_extension(self, obj_id):
+        obj_file = self._data_path + '/' + obj_id + '/objectModel'
+        b_is_valid_file = os.path.exists(obj_file + '.ply') and os.path.isfile(obj_file + '.ply')
+        if b_is_valid_file:
+            return '.ply'
+        b_is_valid_file = os.path.exists(obj_file + '.stl') and os.path.isfile(obj_file + '.stl')
+        if b_is_valid_file:
+            return '.stl'
         return None
 
-    def get_obj_file_extension(self):
-        if self._obj_file_ext is not None:
-            return self._obj_file_ext
-        obj_file = self._data_path + '/' + self._obj_id + '/objectModel'
-        try:
-            points = os.path.isfile(obj_file + '.ply')
-            self._obj_file_ext = '.ply'
-        except:
-            rospy.loginfo('[objectFileIO] No \".ply\" file found for the object: ' + self._obj_id)
+    def get_openrave_file_name(self, obj_id):
+        # return self._data_path + '/' + obj_id + '/' + obj_id + '.kinbody.xml'
+        return self._data_path + '/' + obj_id + '/' + 'objectModel' + self.get_obj_file_extension(obj_id)
 
-        if self._obj_file_ext is None:
-            try:
-                points = os.path.isfile(obj_file + '.stl')
-                self._obj_file_ext = '.stl'
-            except:
-                rospy.loginfo('[objectFileIO] No \".stl\" file found for the object: ' + self._obj_id)
-        return self._obj_file_ext
-        
-    def get_hfts(self, force_new=False):
-        if self._hfts is None or self._hfts_param is None:
-            if os.path.isfile(self._hfts_file) and not force_new:
-                self._hfts = np.load(self._hfts_file)
-                self._hfts_param = np.load(self._hfts_param_file)
-                self._obj_com = np.load(self._obj_com_file)
-            else:
-                if not force_new:
-                    rospy.logwarn('HFTS is not available in the database')
-                points = self.get_points()
-                hfts_gen = HFTSGenerator(points)
-                hfts_gen.run()
-                self._hfts = hfts_gen.get_hfts()
-                self._hfts_param = hfts_gen.get_hfts_param()
-                hfts_gen.save_hfts(hfts_file=self._hfts_file, hfts_param_file=self._hfts_param_file,
-                                   com_file=self._obj_com_file)
-        return self._hfts, self._hfts_param.astype(int)
-    
-    def get_obj_com(self):
-        if self._obj_com is None:
-            points = self.get_points()
-            return np.mean(points[:, :3], axis = 0)
-        return self._obj_com
+    def get_hfts(self, obj_id, force_new=False):
+        # Check whether we have an HFTS for this object in memory
+        if self._last_obj_id != obj_id:
+            # If not update
+            b_success = self._update_hfts(obj_id, force_new)
+            if not b_success:
+                return None, None, None
+        return self._last_hfts, self._last_hfts_param.astype(int), self._last_obj_com
+
+    def _update_hfts(self, obj_id, force_new=False):
+        """ Updates the cached hfts """
+        hfts_file = self._data_path + '/' + obj_id + '/hfts.npy'
+        hfts_param_file = self._data_path + '/' + obj_id + '/hftsParam.npy'
+        obj_com_file = self._data_path + '/' + obj_id + '/objCOM.npy'
+        # If it does not need to be regenerated, try to load it from file
+        if not force_new:
+            b_hfts_read = self._read_hfts(obj_id, hfts_file, hfts_param_file, obj_com_file)
+            if b_hfts_read:
+                return True
+            rospy.logwarn('HFTS is not available in the database')
+
+        # If we reached this point, we have to generate a new HFTS from mesh/point cloud
+        points = self.get_points(obj_id)
+        if points is None:
+            rospy.logerr('Could not generate HFTS for object ' + obj_id)
+            return False
+        # If we have points, generate an hfts
+        hfts_gen = HFTSGenerator(points)
+        hfts_gen.run()
+        self._last_obj_id = obj_id
+        self._last_hfts = hfts_gen.get_hfts()
+        self._last_hfts_param = hfts_gen.get_hfts_param()
+        self._last_obj_com = np.mean(points[:, :3], axis=0)
+        hfts_gen.save_hfts(hfts_file=hfts_file, hfts_param_file=hfts_param_file,
+                           com_file=obj_com_file)
+        return True
+
+    def _read_hfts(self, obj_id, hfts_file, hfts_param_file, obj_com_file):
+        if os.path.exists(hfts_file) and os.path.isfile(hfts_file) \
+                and os.path.exists(hfts_param_file) and os.path.isfile(hfts_param_file) \
+                and os.path.exists(obj_com_file) and os.path.isfile(obj_com_file):
+            self._last_obj_id = obj_id
+            self._last_hfts = np.load(hfts_file)
+            self._last_hfts_param = np.load(hfts_param_file)
+            self._last_obj_com = np.load(obj_com_file)
+            return True
+        return False
 
     def show_hfts(self, level):
         # TODO This function is only for debugging purpose, will be removed
-        if self._hfts is None:
-            self.get_hfts()
-        if level > len(self._hfts_param) - 1:
+        if self._last_hfts is None:
+            rospy.logerr('[ObjectFileIO::show_hfts] Non hfts model loaded.')
+            return
+        if level > len(self._last_hfts_param) - 1:
             raise ValueError('[objectFileIO::showHFTS] level ' + str(level) + ' does not exist')
         b_factors = []
         for i in range(level + 1):
-            b_factors.append(np.arange(self._hfts_param[i]))
+            b_factors.append(np.arange(self._last_hfts_param[i]))
         labels = itertools.product(*b_factors)
-        hfts_labels = self._hfts[:, 6:7 + level]
+        hfts_labels = self._last_hfts[:, 6:7 + level]
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
         for label in labels:
             idx = np.where((hfts_labels == label).all(axis=1))[0]
-            cluster_points = self._hfts[idx, :3]
+            cluster_points = self._last_hfts[idx, :3]
             ax.scatter(cluster_points[:, 0], cluster_points[:, 1], cluster_points[:, 2], c=np.random.rand(3,1), s = 100)
         plt.show()
 
@@ -215,6 +226,23 @@ class HFTSGenerator:
         return self._hfts_param
 
 
+def filter_points(points, filter_threshold):
+    kdt = KDTree(points[:, :3], leaf_size=6, metric='euclidean')
+    rospy.loginfo('Filtering points for constructing HFTS')
+    vld_idx = np.ones(points.shape[0], dtype=bool)
+    i = 0
+    for p in points:
+        nb_idx = kdt.query([p[:3]], k=20, return_distance=False)[0]
+        nb_points_normals = points[nb_idx, 3:]
+        var = np.var(nb_points_normals, axis = 0)
+        if max(var) > filter_threshold:
+            vld_idx[i] = False
+        i += 1
+
+    points = points[vld_idx, :]
+    return points
+
+
 def clamp(values, min_values, max_values):
     clamped_values = len(values) * [0.0]
     assert len(values) == len(min_values) and len(values) == len(max_values)
@@ -224,11 +252,22 @@ def clamp(values, min_values, max_values):
 
 
 def read_ply_file(file_id):
-    plydata = PlyData.read(file_id)
-    vertex = plydata['vertex']
+    ply_data = PlyData.read(file_id)
+    vertex = ply_data['vertex']
     (x, y, z, nx, ny, nz) = (vertex[t] for t in ('x', 'y', 'z', 'nx', 'ny', 'nz'))
     points = zip(x, y, z, nx, ny, nz)
     return np.asarray(points)
+
+
+def read_stl_file(file_id):
+    stl_mesh = stl_mesh_module.Mesh.from_file(file_id)
+    points = np.zeros((len(stl_mesh.points), 6))
+    # Extract points with normals from the mesh surface
+    for face_idx in range(len(stl_mesh.points)):
+        # For this, we select the center of each face
+        points[face_idx, 0:3] = (stl_mesh.v0[face_idx] + stl_mesh.v1[face_idx] + stl_mesh.v2[face_idx]) / 3.0
+        points[face_idx, 3:6] = stl_mesh.normals[face_idx]
+    return points
 
 
 def create_point_cloud(points):

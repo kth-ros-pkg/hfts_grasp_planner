@@ -3,6 +3,7 @@
 """This module contains a wrapper class of the HFTS Grasp Sampler."""
 
 from hfts_grasp_planner.core import HFTSSampler, HFTSNode
+from utils import ObjectFileIO
 from sampler import SamplingResult
 import logging
 import numpy
@@ -19,9 +20,11 @@ class HFTSNodeDataExtractor:
 class GraspGoalSampler:
     """ Wrapper class for the HFTS Grasp Planner/Sampler that allows a full black box usage."""
 
-    def __init__(self, hand_path, planning_scene_interface,
+    # TODO data_path is specific to reading objects from a filesystem. Better probably to pass ObjectIO
+    def __init__(self, data_path, hand_path, planning_scene_interface,
                  visualize=False, open_hand_offset=0.1):
         """ Creates a new wrapper.
+            @param data_path Path to where all object data is stored.
             @param hand_path Path to where the hand data is stored.
             @param planning_scene_interface OpenRAVE environment with some additional information
                                             containing the robot and its surroundings.
@@ -31,7 +34,9 @@ class GraspGoalSampler:
             hence a grasping configuration is always in collision. To enable motion planning to such a
             configuration we open the hand by some constant offset.
             """
-        self.grasp_planner = HFTSSampler(vis=visualize, scene_interface=planning_scene_interface)
+        object_io_interface = ObjectFileIO(data_path)
+        self.grasp_planner = HFTSSampler(object_io_interface=object_io_interface,
+                                         vis=visualize, scene_interface=planning_scene_interface)
         self.grasp_planner.set_max_iter(100)
         self.open_hand_offset = open_hand_offset
         self.root_node = self.grasp_planner.get_root_node()
@@ -62,13 +67,12 @@ class GraspGoalSampler:
         """ Reset the hand being used. @see __init__ for parameter description. """
         self.grasp_planner.load_hand(hand_file=hand_path)
 
-    def set_object(self, obj_path, obj_id, model_id=None):
+    def set_object(self, obj_id, model_id=None):
         """ Set the object.
-            @param obj_path String containing the path to object file.
             @param obj_id String identifying the object.
             @param model_id (optional) Name of the model data. If None, it is assumed to be identical to obj_id
         """
-        self.grasp_planner.load_object(data_path=obj_path, obj_id=obj_id, model_id=model_id)
+        self.grasp_planner.load_object(obj_id=obj_id, model_id=model_id)
         self.root_node = self.grasp_planner.get_root_node()
 
     def set_max_iter(self, iterations):

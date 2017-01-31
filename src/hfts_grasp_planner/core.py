@@ -86,7 +86,7 @@ class PlanningSceneInterface(object):
 
 
 class HFTSSampler:
-    def __init__(self, scene_interface=None, verbose=False, num_hops=2, vis=False):
+    def __init__(self, object_io_interface, scene_interface=None, verbose=False, num_hops=2, vis=False):
         self._verbose = verbose
         self._sampler_viewer = vis
         self._orEnv = orpy.Environment() # create openrave environment
@@ -118,6 +118,7 @@ class HFTSSampler:
         self._branching_factors = []
         self.handles = []
         self.tip_pn_handler = []
+        self._object_io_interface = object_io_interface
 
     def __del__(self):
         orpy.RaveDestroy()
@@ -176,20 +177,22 @@ class HFTSSampler:
             rospy.loginfo('Hand loaded in OpenRAVE environment')
             self._hand_loaded = True
 
-    def load_object(self, data_path, obj_id, model_id=None):
+    def load_object(self, obj_id, model_id=None):
         if model_id is None:
             model_id = obj_id
-        object_io = ObjectFileIO(data_path, model_id)
-        self._data_labeled, self._branching_factors = object_io.get_hfts()
+        self._data_labeled, self._branching_factors, self._obj_com = \
+            self._object_io_interface.get_hfts(model_id)
+        if self._data_labeled is None:
+            raise RuntimeError('Could not load HFTS model for model ' + model_id)
         self._num_levels = len(self._branching_factors)
         # First, delete old object if there is any
         if self._obj_loaded:
             self._orEnv.Remove(self._obj)
-        self._obj_loaded = self._orEnv.Load(data_path + '/' + model_id + '/objectModel' + object_io.get_obj_file_extension())
+        or_file_name = self._object_io_interface.get_openrave_file_name(model_id)
+        self._obj_loaded = self._orEnv.Load(or_file_name)
         if not self._obj_loaded:
-            raise RuntimeError('Could not load object model %s at location %s' % (model_id, data_path))
+            raise RuntimeError('Could not load object model %s in OpenRAVE' % model_id)
         self._obj = self._orEnv.GetKinBody('objectModel')
-        self._obj_com = object_io.get_obj_com()
         rospy.loginfo('Object loaded in OpenRAVE environment')
         if self._scene_interface is not None:
             self._scene_interface.set_target_object(obj_id)
@@ -253,26 +256,26 @@ class HFTSSampler:
         depth_limit -= 1
         rospy.logdebug('[HFTSSampler::sample_grasp] Sampling a grasp; %i number of iterations' % self._max_iters)
 
+        # Do stochastic optimization until depth_limit is reached
         while depth_limit >= 0:
-            # do stochastic optimization until depth_limit is reached
+            # Randomly select siblings to optimize the objective function
             for iter_now in range(self._max_iters):
                 labels_tmp = self.get_random_sibling_labels(curr_labels=contact_label,
                                                             allowed_finger_combos=allowed_finger_combos)
                 s_tmp, r_tmp, o_tmp = self.evaluate_grasp(labels_tmp)
-
                 if self.shc_evaluation(o_tmp, best_o):
                     contact_label = labels_tmp
                     best_o = o_tmp
-
-            # descend to next level if we iterate at least once more
+            # Descend to next level if we iterate at least once more
             if depth_limit > 0:
                 best_o, contact_label = self.extend_hfts_node(contact_label)
             depth_limit -= 1
 
-        # Create output
+        # Evaluate grasp on robot hand
+        # First, determine a hand configuration and the contact locations
         grasp_conf, fingertip_poses = self.compose_grasp_info(contact_label)
-        if post_opt:
-            rospy.logdebug('[HFTSSampler::sample_grasp] Doing post optimization for node %s' % str(contact_label))
+        # if post_opt:
+        #     rospy.logdebug('[HFTSSampler::sample_grasp] Doing post optimization for node %s' % str(contact_label))
         # Compute grasp quality (a combination of stability, reachability and collision conditions)
         try:
             b_robotiq_ok = self.simulate_grasp(grasp_conf=grasp_conf, fingertip_poses=fingertip_poses,
@@ -292,8 +295,10 @@ class HFTSSampler:
         is_goal_sample = (sample_q == 0) and is_leaf
         if not is_goal_sample and grasp_conf is not None:
             rospy.logdebug('[HFTSSampler::sample_grasp] Approximate has final quality: %i' % sample_q)
-            self.avoid_collision_at_fingers(n_step=20)
-            open_hand_offset = 0.0
+            b_approximate_feasible = self.avoid_collision_at_fingers(n_step=20)
+            if b_approximate_feasible:
+                grasp_conf = self._robot.GetDOFValues()
+                open_hand_offset = 0.0
 
         logging.debug('[HFTSSampler::sample_grasp] We sampled a grasp on level ' + str(len(contact_label[0])))
         if is_goal_sample:
@@ -350,9 +355,9 @@ class HFTSSampler:
         # TODO make this to a non-object-global variable
         self._grasp_contacts = np.asarray(contacts)
         code_tmp = self._hand_manifold.encode_grasp(self._grasp_contacts)
-        dummy, grasp_conf  = self._hand_manifold.predict_hand_conf(code_tmp)
-        grasp_pose = self._robot.get_ori_tip_pn(grasp_conf)
-        return grasp_conf, grasp_pose
+        dummy, grasp_conf = self._hand_manifold.predict_hand_conf(code_tmp)
+        fingertip_contact_poses = self._robot.get_ori_tip_pn(grasp_conf)
+        return grasp_conf, fingertip_contact_poses
 
     def extend_hfts_node(self, old_labels):
         for label in old_labels:
@@ -493,9 +498,7 @@ class HFTSSampler:
             self.cloud_plot.append(self._orEnv.plot3(points=points, pointsize=0.006, colors=colors[i], drawstyle=1))
 
     def avoid_collision_at_fingers(self, n_step):
-        # TODO auto open each dof individually until fingers are not in collision anymore
-        # TODO This is most probably hand specific... Maybe move hand specific code to a different class?
-        pass
+        return self._robot.avoid_collision_at_fingers(n_step)
 
 
 class HFTSNode:

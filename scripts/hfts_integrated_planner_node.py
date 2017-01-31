@@ -50,10 +50,14 @@ class HandlerClass(object):
         self._params['use_approximates'] = rospy.get_param('use_approximates', default=True)
         self._params['compute_velocities'] = rospy.get_param('compute_velocities', default=True)
         self._params['time_limit'] = rospy.get_param('time_limit', default=60.0)
+        self._params['num_hfts_sampling_steps'] = rospy.get_param('num_hfts_sampling_steps', default=-1)
         # Make sure we do not visualize grasps and the system at the same time (only one OR viewer)
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
         # Create planner
-        self._planner = IntegratedHFTSPlanner(env_file=env_file, robot_name=robot_name, manipulator_name=manip_name,
+        self._planner = IntegratedHFTSPlanner(env_file=env_file, robot_name=robot_name,
+                                              manipulator_name=manip_name,
+                                              data_root_path=self._package_path + '/data',
+                                              num_hfts_sampling_steps=self._params['num_hfts_sampling_steps'],
                                               b_visualize_system=b_visualize_system,
                                               b_visualize_grasps=b_visualize_grasps,
                                               b_visualize_hfts=b_visualize_hfts,
@@ -133,7 +137,7 @@ class HandlerClass(object):
         if len(model_id) == 0:
             model_id = None
         # Prepare the planner to work with the target object
-        self._planner.load_object(obj_file_path=self._package_path + '/data', obj_id=obj_id,
+        self._planner.load_object(obj_id=obj_id,
                                   model_id=model_id)
         # Get the start configuration
         ros_start_configuration = request.start_configuration
