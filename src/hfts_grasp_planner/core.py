@@ -98,11 +98,9 @@ class HFTSSampler:
         self._hand_loaded = False
         self._scene_interface = scene_interface
         self._obj_loaded = False
-        self._mu = 2.
-        self._alpha = 2.
         self._max_iters = 40
+        self._reachability_weight = 1.0
         self._hops = num_hops
-        self._ita = 0.001
         self._pre_gasp_conf = None
         self._grasp_contacts = None
         self._arm_conf = None
@@ -390,9 +388,10 @@ class HFTSSampler:
         s_tmp = self._hand_manifold.compute_grasp_quality(self._obj_com, contacts)
         code_tmp = self._hand_manifold.encode_grasp(contacts)
         r_tmp, dummy = self._hand_manifold.predict_hand_conf(code_tmp)
-        # o_tmp = s_tmp - self._alpha * r_tmp
         # TODO: Research topic. This is kind of hack. Another objective function might be better
-        o_tmp = s_tmp / (r_tmp + 0.000001)
+        # o_tmp = s_tmp / (r_tmp + 0.000001)
+        o_tmp = s_tmp - self._reachability_weight * r_tmp
+        # o_tmp = s_tmp / (r_tmp + 1.0)
         return s_tmp, r_tmp, o_tmp
 
     def shc_evaluation(self, o_tmp, best_o):
@@ -400,13 +399,6 @@ class HFTSSampler:
             return True
         else:
             return False
-        # v = (bestO - o_tmp) / self._ita
-        # if v < 0: #python overflow
-        #     return True
-        # else:
-        #     return False
-        # p = 1. / (1 + exp(v))
-        # return  p > np.random.uniform()
 
     def get_random_sibling_label(self, label):
         ret = []
@@ -460,6 +452,18 @@ class HFTSSampler:
     def set_max_iter(self, m):
         assert m > 0
         self._max_iters = m
+
+    def set_parameters(self, max_iters=None, reachability_weight=None,
+                       com_center_weight=None, pos_reach_weight=None,
+                       angle_reach_weight=None):
+        if max_iters is not None:
+            self._max_iters = max_iters
+            assert self._max_iters > 0
+        if reachability_weight is not None:
+            self._reachability_weight = reachability_weight
+            assert self._reachability_weight >= 0.0
+        # TODO this is Robotiq hand specific
+        self._hand_manifold.set_parameters(com_center_weight, pos_reach_weight, angle_reach_weight)
 
     def comply_eef(self):
         # TODO this seems to be Robotiq hand specific

@@ -5,10 +5,12 @@ import rospkg
 from hfts_grasp_planner.utils import *
 from hfts_grasp_planner.core import HFTSSampler, HFTSNode
 from hfts_grasp_planner.srv import PlanGrasp, PlanGraspRequest, PlanGraspResponse
+from hfts_grasp_planner.cfg import HFTSPlannerConfig
 from geometry_msgs.msg import PoseStamped, Pose
 from sensor_msgs.msg import JointState
 import tf.transformations as tff
 from std_msgs.msg import Header
+from dynamic_reconfigure.server import Server
 
 
 PACKAGE_NAME = 'hfts_grasp_planner'
@@ -20,12 +22,22 @@ class HandlerClass(object):
     def __init__(self):
         """ Creates a new handler class."""
         rospack = rospkg.RosPack()
-        self._package_path = rospack.get_path(PACKAGE_NAME)
-        # Create planner
+        package_path = rospack.get_path(PACKAGE_NAME)
+        self._params = {}
+        # Update static parameters
         b_visualize = rospy.get_param('visualize', default=False)
-        self._planner = HFTSSampler(num_hops=4, vis=b_visualize)
+        # Update dynamic parameters
+        self._params['num_hfts_iterations'] = rospy.get_param('num_hfts_iterations', default=40)
+        self._params['num_planning_attempts'] = rospy.get_param('num_planning_attempts', default=10)
+        self._params['com_center_weight'] = rospy.get_param('com_center_weight', default=10.0)
+        self._params['position_reachability_weight'] = rospy.get_param('position_reachability_weight', default=10.0)
+        self._params['normal_reachability_weight'] = rospy.get_param('normal_reachability_weight', default=10.0)
+        self._params['reachability_weight'] = rospy.get_param('reachability_weight', default=10.0)
+        # Create planner
+        object_loader = ObjectFileIO(package_path + '/data/')
+        self._planner = HFTSSampler(object_loader, num_hops=4, vis=b_visualize)
         # Load hand and save joint names
-        hand_file = self._package_path + rospy.get_param('handFile')
+        hand_file = package_path + rospy.get_param('handFile')
         self._planner.load_hand(hand_file)
         or_hand = self._planner.get_or_hand()
         joints = or_hand.GetJoints()
@@ -38,17 +50,25 @@ class HandlerClass(object):
         # TODO generate HFTS from point cloud if point cloud is specified
         # pointCloud = req.point_cloud
         # Load the requested object first
-        self._planner.load_object(self._package_path + '/data', req.object_identifier)
+        self._planner.load_object(req.object_identifier)
+        self._planner.set_parameters(max_iters=self._params['num_hfts_iterations'],
+                                     reachability_weight=self._params['reachability_weight'],
+                                     com_center_weight=self._params['com_center_weight'],
+                                     angle_reach_weight=self._params['normal_reachability_weight'],
+                                     pos_reach_weight=self._params['position_reachability_weight'])
         # We always start from the root node, so create a root node
         root_hfts_node = HFTSNode()
-        max_iterations = rospy.get_param('max_iterations', 20)
+        num_planning_attempts = self._params['num_planning_attempts']
+        rospy.loginfo('[HandlerClass::handle_plan_request] Planning grasp, running %i attempts.' % num_planning_attempts)
         iteration = 0
         # Iterate until either shutdown, max_iterations reached or a good grasp was found
-        while iteration < max_iterations and not rospy.is_shutdown():
+        while iteration < num_planning_attempts and not rospy.is_shutdown():
             return_node = self._planner.sample_grasp(root_hfts_node,
                                                      self._planner.get_maximum_depth(),
                                                      post_opt=True)
+            iteration += 1
             if return_node.is_goal():
+                rospy.loginfo('[HandlerClass::handle_plan_request] Found a grasp after %i attempts.' % iteration)
                 grasp_pose = return_node.get_hand_transform()
                 pose_quaternion = tff.quaternion_from_matrix(grasp_pose)
                 pose_position = grasp_pose[:3, -1]
@@ -78,12 +98,19 @@ class HandlerClass(object):
                 # Return the response
                 return PlanGraspResponse(True, stamped_ros_grasp_pose, ros_hand_joint_state)
         # In case of failure or shutdown return a response indicating failure.
+        rospy.loginfo('[HandlerClass::handle_plan_request] Failed to find a grasp.')
         return PlanGraspResponse(False, PoseStamped(), JointState())
+
+    def update_parameters(self, config, level):
+        rospy.loginfo('[HandlerClass::update_parameters] Received new parameters.')
+        self._params = config
+        return config
 
 
 if __name__ == "__main__":
     rospy.init_node('hfts_planner_node')
     handler = HandlerClass()
+    srv = Server(HFTSPlannerConfig, handler.update_parameters)
     s = rospy.Service('/hfts_planner/plan_fingertip_grasp', PlanGrasp, handler.handle_plan_request)
     rospy.spin()
 

@@ -51,6 +51,10 @@ class HandlerClass(object):
         self._params['compute_velocities'] = rospy.get_param('compute_velocities', default=True)
         self._params['time_limit'] = rospy.get_param('time_limit', default=60.0)
         self._params['num_hfts_sampling_steps'] = rospy.get_param('num_hfts_sampling_steps', default=-1)
+        self._params['com_center_weight'] = rospy.get_param('com_center_weight', default=0.1)
+        self._params['position_reachability_weight'] = rospy.get_param('position_reachability_weight', default=1.0)
+        self._params['normal_reachability_weight'] = rospy.get_param('normal_reachability_weight', default=1.0)
+        self._params['reachability_weight'] = rospy.get_param('reachability_weight', default=1.0)
         # Make sure we do not visualize grasps and the system at the same time (only one OR viewer)
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
         # Create planner
@@ -130,7 +134,10 @@ class HandlerClass(object):
         # TODO: update planner parameters
         rospy.loginfo('Executing planner with parameters: ' + str(self._params))
         self._planner.set_parameters(time_limit=self._params['time_limit'],
-                                     compute_velocities=self._params['compute_velocities'])
+                                     compute_velocities=self._params['compute_velocities'],
+                                     com_center_weight=self._params['com_center_weight'],
+                                     pos_reach_weight=self._params['position_reachability_weight'],
+                                     angle_reach_weight=self._params['normal_reachability_weight'])
         response = PlanGraspMotionResponse()
         obj_id = request.object_identifier
         model_id = request.model_identifier

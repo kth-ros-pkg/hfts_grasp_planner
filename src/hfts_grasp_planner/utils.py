@@ -49,7 +49,7 @@ class ObjectFileIO(ObjectIO):
             if self._b_var_filter:
                 points = filter_points(points, self._filter_threshold)
         else:
-            rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + file_extension +
+            rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + str(file_extension) +
                          ' file for object ' + obj_id)
         # rospy.logwarn('No previous file found in the database, will proceed with raw point cloud instead.')
         # TODO read point cloud
@@ -63,6 +63,7 @@ class ObjectFileIO(ObjectIO):
         b_is_valid_file = os.path.exists(obj_file + '.stl') and os.path.isfile(obj_file + '.stl')
         if b_is_valid_file:
             return '.stl'
+        rospy.logerr('[ObjectFileIO::get_obj_file_extension] No compatible file found with prefix name ' + obj_file)
         return None
 
     def get_openrave_file_name(self, obj_id):

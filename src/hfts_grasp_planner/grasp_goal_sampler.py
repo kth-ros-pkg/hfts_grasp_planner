@@ -83,3 +83,6 @@ class GraspGoalSampler:
 
     def get_root(self):
         return self.root_node
+
+    def set_parameters(self, **kwargs):
+        self.grasp_planner.set_parameters(**kwargs)

@@ -87,14 +87,14 @@ class RobotiqHand:
         return self.get_tip_pn()
     
     def set_random_conf(self):
-        lower, upper = self._or_hand.GetDOFLimits()
-        upper[1] = 0.93124747
+        self._lower_limits, self._upper_limits = self._or_hand.GetDOFLimits()
+        self._upper_limits[1] = 0.93124747
         self_collision = True
         
         while self_collision:
             ret = []
             for i in range(2):
-                ret.append(np.random.uniform(lower[i], upper[i]))
+                ret.append(np.random.uniform(self._lower_limits[i], self._upper_limits[i]))
             self.SetDOFValues(ret)
             self_collision = self._or_hand.CheckSelfCollision()
             
@@ -153,68 +153,125 @@ class RobotiqHandVirtualManifold:
         Mimic the hand manifold interface from our ICRA'16 paper,
         it is not needed to model a reachability manifold for the Robotiq-S.
     """
-    def __init__(self, or_hand):
+    def __init__(self, or_hand, com_center_weight=0.1, pos_reach_weight=10.0, angle_reach_weight=10.0):
         self._or_hand = or_hand
-        self._alpha = 10.0
+        self._com_center_weight = com_center_weight
+        self._pos_reach_weight = pos_reach_weight
+        self._angle_reach_weight = angle_reach_weight
+        # The distances between fingertip 0 and 1, we can achieve:
+        self._distance_range_0 = np.array([0.0255, 0.122])
+        # The distances between the center of contacts 0,1 and contact 2, we can achieve:
+        self._distance_range_1 = np.array([0, 0.165])
+        self._lower_limits, self._upper_limits = self._or_hand.GetDOFLimits()
+        # The hand can close into itself, which is not useful for fingertip grasping,
+        # so we change the upper limit here:
+        self._upper_limits[1] = 0.93124747
+        # We use a linear approximation to map desired contact distances to joint angles
+        self._lin_factor_0 = (self._upper_limits[0] - self._lower_limits[0]) / \
+                             (self._distance_range_0[1] - self._distance_range_0[0])  # for joint 0
+        self._lin_factor_1 = (self._upper_limits[1] - self._lower_limits[1]) / \
+                             (self._distance_range_1[1] - self._distance_range_1[0])  # for joint 1
+
+    def set_parameters(self, com_center_weight=None, pos_reach_weight=None, angle_reach_weight=None):
+        if com_center_weight is not None:
+            self._com_center_weight = com_center_weight
+        if pos_reach_weight is not None:
+            self._pos_reach_weight = pos_reach_weight
+        if angle_reach_weight is not None:
+            self._angle_reach_weight = angle_reach_weight
 
     def predict_hand_conf(self, q):
-        range0 = np.array([0.0255, 0.122])
-        range1 = np.array([0, 0.165])
-        lower, upper = self._or_hand.GetDOFLimits()
-        upper[1] = 0.93124747
-        pos_residual0 = dist_in_range(q[0], range0)
-        pos_residual1 = dist_in_range(q[1], range1)
-
-        res0 = (upper[0] - lower[0]) / (range0[1] - range0[0])
-        res1 = (upper[1] - lower[1]) / (range1[1] - range1[0])
-        
+        """
+            Predict a hand configuration for the encoded grasp q.
+            :param q - encoded grasp, see encode_grasp for details.
+            :return tuple (res, config), where res is a floating point number
+                indicating the reachability of the grasp (the larger, the worse)
+                and config a hand configuration that achieves the grasp, if it is feasible,
+                else config is a configuration at joint limits.
+        """
+        pos_residual0 = dist_in_range(q[0], self._distance_range_0)
+        pos_residual1 = dist_in_range(q[1], self._distance_range_1)
+        # Check whether the desired contact distance is within the reachable range
         if pos_residual0 == 0:
-            joint0 = lower[0] + (range0[1] - q[0]) * res0
-        elif pos_residual0 > 0 and q[0] < range0[0]:
-            joint0 = upper[0]
-        elif pos_residual0 > 0 and q[0] > range0[1]:
-            joint0 = lower[0]
+            # If so, use the linear approximation to compute a joint value
+            joint0 = self._lower_limits[0] + (self._distance_range_0[1] - q[0]) * self._lin_factor_0
+        elif pos_residual0 > 0 and q[0] < self._distance_range_0[0]:
+            # else, either go the self._upper_limits joint limit
+            joint0 = self._upper_limits[0]
+        elif pos_residual0 > 0 and q[0] > self._distance_range_0[1]:
+            # or the self._lower_limits joint limit depending on whether the desired distance is too small or large
+            joint0 = self._lower_limits[0]
         else:
-            raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
+            raise ValueError('[RobotiqHandVirtualManifold::predictHandConf] grasp encoding is incorrect')
 
+        # Do the same for the other joint
         if pos_residual1 == 0:
-            joint1 = lower[1] + (range1[1] - q[1]) * res1
-        elif pos_residual1 > 0 and q[1] < range1[0]:
-            joint1 = upper[1]
-        elif pos_residual1 > 0 and q[1] > range1[1]:
-            joint1 = lower[1]
+            joint1 = self._lower_limits[1] + (self._distance_range_1[1] - q[1]) * self._lin_factor_1
+        elif pos_residual1 > 0 and q[1] < self._distance_range_1[0]:
+            joint1 = self._upper_limits[1]
+        elif pos_residual1 > 0 and q[1] > self._distance_range_1[1]:
+            joint1 = self._lower_limits[1]
         else:
             raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
-        return self.get_pred_res(q, [range0, range1]), [joint0, joint1]
+        # Return the configuration and compute the residual of the grasp
+        return self.get_pred_res(q), [joint0, joint1]
     
     def compute_grasp_quality(self, obj_com, grasp):
+        """
+        Computes a grasp quality for the given grasp.
+        :param obj_com: The center of mass of the object.
+        :param grasp: The grasp as matrix
+            [[position, normal],
+             [position, normal],
+             [position, normal]] where all vectors are defined in the object's frame.
+        :return: a floating point number representing the quality (the larger, the better)
+        """
         # TODO need to be tested
         contacts = grasp[:, :3]
+        # Let's express the contacts in a frame centered at the center of mass
         center_shift = contacts - obj_com
+        # We would like contacts to be close around the center of mass.
+        # To measure this, we take the Frobenius norm of center_shift
         d = np.linalg.norm(center_shift)
-        v01 = grasp[0, :3] - grasp[1, :3]
-        c01 = (grasp[0, :3] + grasp[1, :3]) / 2.
-        v2c = grasp[2, :3] - c01
-        d01 = np.linalg.norm(v01)
-        d2c = np.linalg.norm(v2c)
-        return 100 * ((d01 + d2c) - 0.1 * d)
+        vec_10 = grasp[0, :3] - grasp[1, :3]
+        center_01 = (grasp[0, :3] + grasp[1, :3]) / 2.
+        vec_c2 = grasp[2, :3] - center_01
+        dist_10 = np.linalg.norm(vec_10)
+        dist_c2 = np.linalg.norm(vec_c2)
+        # We want contacts to be centered around the center of mass
+        # and at the same time would like to spread the contacts apart, so that
+        # we have a high resistance against external torques.
+        return dist_10 + dist_c2 - self._com_center_weight * d
         
-    def get_pred_res(self, q, ranges):
-        range0, range1 = ranges
-        pos_residual0 = dist_in_range(q[0], range0)
-        pos_residual1 = dist_in_range(q[1], range1)
+    def get_pred_res(self, q):
+        pos_residual0 = dist_in_range(q[0], self._distance_range_0)
+        pos_residual1 = dist_in_range(q[1], self._distance_range_1)
         angle_residual0 = q[2]
         angle_residual1 = q[3]
-        r = (pos_residual0 + pos_residual1) * self._alpha + (angle_residual0 + angle_residual1)
+        r = (pos_residual0 + pos_residual1) * self._pos_reach_weight +\
+            self._angle_reach_weight * (angle_residual0 + angle_residual1)
         return r
         
     def encode_grasp(self, grasp):
-        v01 = grasp[0, :3] - grasp[1, :3]
-        c01 = (grasp[0, :3] + grasp[1, :3]) / 2.
-        v2c = grasp[2, :3] - c01
-        d01 = np.linalg.norm(v01)
-        d2c = np.linalg.norm(v2c)
-        a_diff01 = vec_angel_diff(grasp[0, 3:], grasp[1, 3:])
-        avg_n01 = (grasp[0, 3:] + grasp[1, 3:]) / 2.
-        a_diff2_a = vec_angel_diff(grasp[2, 3:], -avg_n01)
-        return [d01, d2c, a_diff01, a_diff2_a]
+        """
+            Encodes the given grasp (rotationally invariant).
+        :param grasp: The grasp to encode. It is assumed the grasp is a matrix of the following format:
+            [[position, normal], [position, normal], [position, normal]] where all vectors are defined in
+            the object's frame.
+        :return:
+            A grasp encoding: [distance_01, distance_2c, angle_difference_01, angle_difference_201] where
+            distance_01 is the distance between the contact for finger 0 and 1,
+            distance_2c is the distance between contact 2 and the center between contact 0 and 1,
+            angle_difference_01 is the difference in angle between normals of contact 0 and 1,
+            angle_difference_201 is the difference in angle between normals of contact 2 and - avg_normal of
+                contact 0 and 1
+        """
+        vec_10 = grasp[0, :3] - grasp[1, :3]
+        center_01 = (grasp[0, :3] + grasp[1, :3]) / 2.
+        vec_c2 = grasp[2, :3] - center_01
+        distance_10 = np.linalg.norm(vec_10)
+        distance_c2 = np.linalg.norm(vec_c2)
+        angle_diff_01 = vec_angel_diff(grasp[0, 3:], grasp[1, 3:])
+        avg_normal_01 = (grasp[0, 3:] + grasp[1, 3:]) / 2.
+        angle_diff_201 = vec_angel_diff(grasp[2, 3:], -avg_normal_01)
+        return [distance_10, distance_c2, angle_diff_01, angle_diff_201]
