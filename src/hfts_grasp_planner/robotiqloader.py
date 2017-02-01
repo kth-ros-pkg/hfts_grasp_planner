@@ -102,14 +102,20 @@ class RobotiqHand:
         return 3
         
     def hand_obj_transform(self, hand_points, obj_points):
-        frame_hand = self.get_tri_frame(hand_points)
-        frame_obj = self.get_tri_frame(obj_points)
+        # We align the hand with the object by matching a frame at the grasp center
+        frame_hand = self.get_tri_frame(hand_points)  # [x; y; z] of this frame in the hand frame
+        frame_obj = self.get_tri_frame(obj_points)  # [x; y; z] of this frame in the object frame
+        # Let's build a transformation matrix from this
         T = transformations.identity_matrix()
-        T[0:3, 0:3] = self.get_rotation_matrix(frame_hand, frame_obj)
+        # frame_hand is a rotation matrix that rotates the hand frame to our helper frame at the grasp center
+        T[0:3, 0:3] = np.dot(frame_obj, np.transpose(frame_hand))  # transpose == inverse for rotation matrices
+        # rotate the hand points to a frame that is aligned with the object frame, but located at the grasp center
+        # we call this frame rotated hand frame
         new_hand_points = np.transpose(np.dot(T[0:3, 0:3], np.transpose(hand_points)))
-        obj_c = np.sum(obj_points, axis=0) / 3.
-        new_hand_c = np.sum(new_hand_points, axis=0) / 3.
-        
+        # use this to compute the translation from object to hand frame
+        obj_c = np.sum(obj_points, axis=0) / 3.  # the position of the grasp center in object frame
+        new_hand_c = np.sum(new_hand_points, axis=0) / 3.  # the position of the grasp center in the rotated hand frame
+        # Finally, the translation is from origin to obj_c and then from there in the opposite direction of new_hand_c
         T[:3, -1] = np.transpose(obj_c - new_hand_c)
         return T
         
@@ -123,19 +129,35 @@ class RobotiqHand:
             raise InvalidTriangleException('Two points are identical')
         z = (np.cross(e02, e01)) / np.linalg.norm(np.cross(e02, e01))
         y = np.cross(z, x)
-        frame = [x, y, z]
+        frame = np.transpose([x, y, z])
         return np.asarray(frame)
-    
-    def get_rotation_matrix(self, frame1, frame2):
-        R = np.dot(np.transpose(frame2), np.linalg.inv(np.transpose(frame1)))
-        return R
 
-    """
-        Opens the hand until there is no collision anymore.
-        @param n_step - maximum number of sampling steps
-        @return True if successful, False otherwise
-    """
+    def close_fingers_until_contact(self, n_step):
+        """
+            Closes the hand until all fingertips are in contact.
+        :param n_step:
+        :return:
+        """
+        curr_conf = self.GetDOFValues()
+        for i in range(100):
+            curr_conf[1] += 0.01
+            self.SetDOFValues(curr_conf)
+            if self.are_fingertips_in_contact():
+                break
+
+    def are_fingertips_in_contact(self):
+        links = self.get_fingertip_links()
+        for link in links:
+            if not self._or_env.CheckCollision(self.GetLink(link)):
+                return False
+        return True
+
     def avoid_collision_at_fingers(self, n_step):
+        """
+            Opens the hand until there is no collision anymore.
+            :param n_step - maximum number of sampling steps
+            :return True if successful, False otherwise
+        """
         if n_step <= 0:
             n_step = 1
         finger_joint_idx = self._or_hand.GetJoint(LAST_FINGER_JOINT).GetDOFIndex()

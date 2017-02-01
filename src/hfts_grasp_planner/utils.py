@@ -9,6 +9,7 @@ import rospy
 from sklearn.cluster import KMeans as KMeans
 import math, copy, os, itertools
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from sklearn.neighbors import KDTree
 from stl import mesh as stl_mesh_module
 from abc import ABCMeta, abstractmethod
@@ -28,10 +29,11 @@ class ObjectIO(object):
 
 
 class ObjectFileIO(ObjectIO):
-    def __init__(self, data_path, var_filter=True, filter_threshold=0.2):
+    def __init__(self, data_path, var_filter=True, filter_threshold=0.2, max_num_points=10000):
         self._data_path = data_path
         self._b_var_filter = var_filter
         self._filter_threshold = filter_threshold
+        self._max_num_points = max_num_points
         self._last_obj_id = None
         self._last_hfts = None
         self._last_hfts_param = None
@@ -47,7 +49,7 @@ class ObjectFileIO(ObjectIO):
             points = read_stl_file(obj_file + file_extension)
         if points is not None:
             if self._b_var_filter:
-                points = filter_points(points, self._filter_threshold)
+                points = filter_points(points, self._filter_threshold, self._max_num_points)
         else:
             rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + str(file_extension) +
                          ' file for object ' + obj_id)
@@ -143,9 +145,9 @@ class HFTSGenerator:
     # 6 dim of positions and normals + labels
     def __init__(self, points):
         self._point_n = points.shape[0]
-        self._obj_com = np.mean(points[:, :3], axis = 0)
+        self._obj_com = np.mean(points[:, :3], axis=0)
         self._points = np.c_[np.arange(self._point_n), points]
-        self._pos_weight = 200
+        self._pos_weight = 10
         self._branch_factor = 4
         self._first_level_factor = 3
         self._level_n = None
@@ -227,20 +229,27 @@ class HFTSGenerator:
         return self._hfts_param
 
 
-def filter_points(points, filter_threshold):
+def filter_points(points, filter_threshold, max_num_points):
     kdt = KDTree(points[:, :3], leaf_size=6, metric='euclidean')
     rospy.loginfo('Filtering points for constructing HFTS')
     vld_idx = np.ones(points.shape[0], dtype=bool)
     i = 0
     for p in points:
-        nb_idx = kdt.query([p[:3]], k=20, return_distance=False)[0]
+        # nb_idx = kdt.query([p[:3]], k=20, return_distance=False)[0]
+        nb_idx = kdt.query_radius(p[:3], r=0.01)[0]
+        if len(nb_idx) == 0:
+            continue
         nb_points_normals = points[nb_idx, 3:]
-        var = np.var(nb_points_normals, axis = 0)
+        var = np.var(nb_points_normals, axis=0)
         if max(var) > filter_threshold:
             vld_idx[i] = False
         i += 1
-
     points = points[vld_idx, :]
+    if points.shape[0] > max_num_points:
+        vld_idx = np.random.choice(points.shape[0], max_num_points, replace=False)
+        points = points[vld_idx, :]
+        # points = [points[i] for i in range(len(points)) if i in vld_idx]
+    assert points.shape[0] <= max_num_points
     return points
 
 
@@ -293,6 +302,7 @@ def vec_angel_diff(v0, v1):
     x = min(1.0, max(-1.0, x)) # fixing math precision error
     angel = math.acos(x)
     return angel
+
 
 def dist_in_range(d, r):
     if d < r[0]:

@@ -102,7 +102,6 @@ class HFTSSampler:
         self._reachability_weight = 1.0
         self._hops = num_hops
         self._pre_gasp_conf = None
-        self._grasp_contacts = None
         self._arm_conf = None
         self._hand_pose_lab = None
         self._robot = None
@@ -121,31 +120,6 @@ class HFTSSampler:
     def __del__(self):
         orpy.RaveDestroy()
 
-    def compute_contact_combinations(self):
-        while len(self._contact_combinations) < self._num_levels:
-            self._contact_combinations.append([])
-        for i in range(self._num_levels):
-            self._contact_combinations[i] = set(itertools.product(range(self._branching_factors[i]),
-                                                                  repeat=self._num_contacts))
-
-    def compute_allowed_contact_combinations(self, depth, label_cache):
-        # Now, for this parent get all possible contacts
-        allowed_finger_combos = set(self._contact_combinations[depth])
-        # Next, we want to filter out contact combinations that are stored in labelCache
-        forbidden_finger_combos = set()
-        for graspLabel in label_cache:
-            finger_combo = tuple([x[-1] for x in graspLabel])
-            forbidden_finger_combos.add(finger_combo)
-        # Filter them out
-        allowed_finger_combos.difference_update(forbidden_finger_combos)
-        return list(allowed_finger_combos)
-
-    def check_grasp_validity(self):
-        # Check whether the hand is collision free
-        if self._robot.CheckSelfCollision():
-            return False
-        return self.is_grasp_collision_free()
-
     def check_arm_grasp_validity(self, grasp_conf, grasp_pose, seed, open_hand_offset=0.1):
         if self._scene_interface is None:
             #TODO Think about what we should do in this case (planning with free-floating hand)
@@ -160,8 +134,151 @@ class HFTSSampler:
                                                open_hand_offset=open_hand_offset)
         return collision_free, arm_conf, pre_grasp_conf
 
+    def check_grasp_validity(self):
+        # Check whether the hand is collision free
+        if self._robot.CheckSelfCollision():
+            return False
+        return self.is_grasp_collision_free()
+
+    def clear_config_cache(self):
+        self._pre_gasp_conf = None
+        self._arm_conf = None
+        self._hand_pose_lab = None
+        shift = transformations.identity_matrix()
+        shift[0,-1] = 0.2
+        self._robot.SetTransform(shift)
+        # Set hand to default (mean) configuration
+        mean_values = map(lambda min_v, max_v: (min_v + max_v) / 2.0,
+                          self._robot.GetDOFLimits()[0],
+                          self._robot.GetDOFLimits()[1])
+        self._robot.SetDOFValues(mean_values, range(len(mean_values)))
+        self.handles = []
+        self.tip_pn_handler = []
+
+    def compute_allowed_contact_combinations(self, depth, label_cache):
+        # Now, for this parent get all possible contacts
+        allowed_finger_combos = set(self._contact_combinations[depth])
+        # Next, we want to filter out contact combinations that are stored in labelCache
+        forbidden_finger_combos = set()
+        for graspLabel in label_cache:
+            finger_combo = tuple([x[-1] for x in graspLabel])
+            forbidden_finger_combos.add(finger_combo)
+        # Filter them out
+        allowed_finger_combos.difference_update(forbidden_finger_combos)
+        return list(allowed_finger_combos)
+
+    def compute_contact_combinations(self):
+        while len(self._contact_combinations) < self._num_levels:
+            self._contact_combinations.append([])
+        for i in range(self._num_levels):
+            self._contact_combinations[i] = set(itertools.product(range(self._branching_factors[i]),
+                                                                  repeat=self._num_contacts))
+
+    def close_fingers_until_contact(self):
+        self._robot.close_fingers_until_contact(100)
+
+    def compose_grasp_info(self, contact_labels):
+        contacts = [] # a list of contact positions and normals
+        for i in range(self._num_contacts):
+            p, n = self.get_cluster_repr(contact_labels[i])
+            contacts.append(list(p) + list(n))
+        # TODO make this to a non-object-global variable
+        object_contacts = np.asarray(contacts)
+        code_tmp = self._hand_manifold.encode_grasp(object_contacts)
+        dummy, grasp_conf = self._hand_manifold.predict_hand_conf(code_tmp)
+        hand_contacts = self._robot.get_ori_tip_pn(grasp_conf)
+        return grasp_conf, object_contacts, hand_contacts
+
+    def evaluate_grasp(self, contact_label):
+        contacts = [] # a list of contact positions and normals
+        for i in range(self._num_contacts):
+            p, n = self.get_cluster_repr(contact_label[i])
+            contacts.append(list(p) + list(n))
+        contacts = np.asarray(contacts)
+        s_tmp = self._hand_manifold.compute_grasp_quality(self._obj_com, contacts)
+        code_tmp = self._hand_manifold.encode_grasp(contacts)
+        r_tmp, dummy = self._hand_manifold.predict_hand_conf(code_tmp)
+        # TODO: Research topic. This is kind of hack. Another objective function might be better
+        # o_tmp = s_tmp / (r_tmp + 0.000001)
+        o_tmp = s_tmp - self._reachability_weight * r_tmp
+        # o_tmp = s_tmp / (r_tmp + 1.0)
+        return s_tmp, r_tmp, o_tmp
+
+    def extend_hfts_node(self, old_labels):
+        for label in old_labels:
+            label.append(np.random.randint(self._branching_factors[len(label)]))
+        s_tmp, r_tmp, o_tmp = self.evaluate_grasp(old_labels)
+        return o_tmp, old_labels
+
+    def get_branch_information(self, level):
+        if level < self.get_maximum_depth():
+            possible_num_children = pow(self._branching_factors[level] + 1, self._num_contacts)
+            possible_num_leaves = 1
+            for d in range(level, self.get_maximum_depth()):
+                possible_num_leaves *= pow(self._branching_factors[level] + 1, self._num_contacts)
+        else:
+            possible_num_children = 0
+            possible_num_leaves = 1
+        return possible_num_children, possible_num_leaves
+
+    def get_cluster_repr(self, label):
+        level = len(label) - 1 # indexed from 0
+        idx = np.where((self._data_labeled[:, 6:7 + level] == label).all(axis=1))
+        points = [self._data_labeled[t, 0:3] for t in idx][0]
+        normals = [self._data_labeled[t, 3:6] for t in idx][0]
+
+        pos = np.sum(points, axis=0) / len(idx[0])
+        normal = np.sum(normals, axis=0) / len(idx[0])
+        normal /= np.linalg.norm(normal)
+        return pos, -normal
+
+    def get_maximum_depth(self):
+        return self._num_levels
+
     def get_or_hand(self):
         return self._robot
+
+    def get_random_sibling_label(self, label):
+        ret = []
+        if len(label) <= self._hops / 2:
+            for i in range(len(label)):
+                ret.append(np.random.randint(self._branching_factors[i]))
+        else:
+            match_len = len(label) - self._hops / 2
+            ret = label[:match_len]
+            for i in range(len(label) - match_len):
+                ret.append(np.random.randint(self._branching_factors[i + match_len]))
+        return ret
+
+    def get_random_sibling_labels(self, curr_labels, allowed_finger_combos=None):
+        labels_tmp = []
+        if allowed_finger_combos is None:
+            for i in range(self._num_contacts):
+                tmp = []
+                # while tmp in labels_tmp or len(tmp) == 0:
+                # TODO what is this loop for? we would never get this result from get_sibling_label
+                while len(tmp) == 0:
+                    tmp = self.get_random_sibling_label(curr_labels[i])
+                labels_tmp.append(tmp)
+        else:
+            finger_combo = random.choice(allowed_finger_combos)
+            for i in range(self._num_contacts):
+                tmp = list(curr_labels[i])
+                tmp[-1] = finger_combo[i]
+                labels_tmp.append(tmp)
+        return labels_tmp
+
+    def get_root_node(self):
+        possible_num_children, possible_num_leaves = self.get_branch_information(0)
+        return HFTSNode(num_possible_children=possible_num_children,
+                        num_possible_leaves=possible_num_leaves)
+
+    def is_grasp_collision_free(self):
+        links = self._robot.get_non_fingertip_links()
+        for link in links:
+            if self._orEnv.CheckCollision(self._robot.GetLink(link)):
+                return False
+        return True
 
     def load_hand(self, hand_file):
         if not self._hand_loaded:
@@ -197,36 +314,13 @@ class HFTSSampler:
         self.compute_contact_combinations()
         self._obj_loaded = True
 
-    def pick_new_start_node(self):
-        num_nodes_top_level = self._branching_factors[0]
-        contact_label = []
-        for i in range(self._num_contacts):
-            contact_label.append([random.choice(range(num_nodes_top_level + 1))])
-        return contact_label
-
-    def clear_config_cache(self):
-        self._pre_gasp_conf = None
-        self._grasp_contacts = None
-        self._arm_conf = None
-        self._hand_pose_lab = None
-        shift = transformations.identity_matrix()
-        shift[0,-1] = 0.2
-        self._robot.SetTransform(shift)
-        # Set hand to default (mean) configuration
-        mean_values = map(lambda min_v, max_v: (min_v + max_v) / 2.0,
-                          self._robot.GetDOFLimits()[0],
-                          self._robot.GetDOFLimits()[1])
-        self._robot.SetDOFValues(mean_values, range(len(mean_values)))
-        self.handles = []
-        self.tip_pn_handler = []
-
     def sample_grasp(self, node, depth_limit, post_opt=False, label_cache=None, open_hand_offset=0.1):
         if depth_limit < 0:
             raise ValueError('HFTSSampler::sample_grasp depth limit must be greater or equal to zero.')
 
         if node.get_depth() >= self._num_levels:
             raise ValueError('HFTSSampler::sample_grasp input node has an invalid depth')
-            
+
         if node.get_depth() + depth_limit >= self._num_levels:
             depth_limit = self._num_levels - node.get_depth() # cap
 
@@ -271,12 +365,14 @@ class HFTSSampler:
 
         # Evaluate grasp on robot hand
         # First, determine a hand configuration and the contact locations
-        grasp_conf, fingertip_poses = self.compose_grasp_info(contact_label)
+        grasp_conf, object_contacts, hand_contacts = self.compose_grasp_info(contact_label)
         # if post_opt:
         #     rospy.logdebug('[HFTSSampler::sample_grasp] Doing post optimization for node %s' % str(contact_label))
         # Compute grasp quality (a combination of stability, reachability and collision conditions)
         try:
-            b_robotiq_ok = self.simulate_grasp(grasp_conf=grasp_conf, fingertip_poses=fingertip_poses,
+            b_robotiq_ok = self.simulate_grasp(grasp_conf=grasp_conf,
+                                               hand_contacts=hand_contacts,
+                                               object_contacts=object_contacts,
                                                post_opt=post_opt)
             if b_robotiq_ok:
                 sample_q = 0
@@ -293,7 +389,7 @@ class HFTSSampler:
         is_goal_sample = (sample_q == 0) and is_leaf
         if not is_goal_sample and grasp_conf is not None:
             rospy.logdebug('[HFTSSampler::sample_grasp] Approximate has final quality: %i' % sample_q)
-            b_approximate_feasible = self.avoid_collision_at_fingers(n_step=20)
+            b_approximate_feasible = self._robot.avoid_collision_at_fingers(n_step=20)
             if b_approximate_feasible:
                 grasp_conf = self._robot.GetDOFValues()
                 open_hand_offset = 0.0
@@ -306,7 +402,7 @@ class HFTSSampler:
 
         if grasp_conf is not None:
             grasp_pose = self._robot.GetTransform()
-            collision_free_arm_ik, arm_conf, pre_grasp_conf =\
+            collision_free_arm_ik, arm_conf, pre_grasp_conf = \
                 self.check_arm_grasp_validity(grasp_conf=grasp_conf,
                                               grasp_pose=grasp_pose,
                                               seed=seed_ik, open_hand_offset=open_hand_offset)
@@ -322,132 +418,6 @@ class HFTSSampler:
                         is_goal=is_goal_sample, is_leaf=is_leaf, is_valid=collision_free_arm_ik,
                         num_possible_children=possible_num_children, num_possible_leaves=possible_num_leaves,
                         hand_transform=self._robot.GetTransform())
-
-    def simulate_grasp(self, grasp_conf, fingertip_poses, post_opt=False):
-        # TODO this method as it is right now is only useful for the Robotiq hand.
-        self._robot.SetDOFValues(grasp_conf)
-        try:
-            T = self._robot.hand_obj_transform(fingertip_poses[:3, :3], self._grasp_contacts[:, :3])
-            self._robot.SetTransform(T)
-        except:
-            # TODO figure out what exceptions we expect here and wanna catch
-            return False
-        self.comply_eef()
-        if self.check_grasp_validity():
-            return True
-        self.swap_contacts([0, 1])
-        self._robot.SetDOFValues(grasp_conf)
-        try:
-            T = self._robot.hand_obj_transform(fingertip_poses[:3, :3], self._grasp_contacts[:, :3])
-            self._robot.SetTransform(T)
-        except:
-            return False
-        self.comply_eef()
-        return self.check_grasp_validity()
-
-    def compose_grasp_info(self, contact_labels):
-        contacts = [] # a list of contact positions and normals
-        for i in range(self._num_contacts):
-            p, n = self.cluster_repr(contact_labels[i])
-            contacts.append(list(p) + list(n))
-        # TODO make this to a non-object-global variable
-        self._grasp_contacts = np.asarray(contacts)
-        code_tmp = self._hand_manifold.encode_grasp(self._grasp_contacts)
-        dummy, grasp_conf = self._hand_manifold.predict_hand_conf(code_tmp)
-        fingertip_contact_poses = self._robot.get_ori_tip_pn(grasp_conf)
-        return grasp_conf, fingertip_contact_poses
-
-    def extend_hfts_node(self, old_labels):
-        for label in old_labels:
-            label.append(np.random.randint(self._branching_factors[len(label)]))
-        s_tmp, r_tmp, o_tmp = self.evaluate_grasp(old_labels)
-        return o_tmp, old_labels
- 
-    def cluster_repr(self, label):
-        level = len(label) - 1 # indexed from 0
-        idx = np.where((self._data_labeled[:, 6:7 + level] == label).all(axis=1))
-        points = [self._data_labeled[t, 0:3] for t in idx][0]
-        normals = [self._data_labeled[t, 3:6] for t in idx][0]
-
-        pos = np.sum(points, axis=0) / len(idx[0])
-        normal = np.sum(normals, axis=0) / len(idx[0])
-        normal /= np.linalg.norm(normal)
-        return pos, -normal
- 
-    def swap_contacts(self, rows):
-        frm = rows[0]
-        to = rows[1]
-        self._grasp_contacts[[frm, to], :] = self._grasp_contacts[[to, frm], :]
-
-    def evaluate_grasp(self, contact_label):
-        contacts = [] # a list of contact positions and normals
-        for i in range(self._num_contacts):
-            p, n = self.cluster_repr(contact_label[i])
-            contacts.append(list(p) + list(n))
-        contacts = np.asarray(contacts)
-        s_tmp = self._hand_manifold.compute_grasp_quality(self._obj_com, contacts)
-        code_tmp = self._hand_manifold.encode_grasp(contacts)
-        r_tmp, dummy = self._hand_manifold.predict_hand_conf(code_tmp)
-        # TODO: Research topic. This is kind of hack. Another objective function might be better
-        # o_tmp = s_tmp / (r_tmp + 0.000001)
-        o_tmp = s_tmp - self._reachability_weight * r_tmp
-        # o_tmp = s_tmp / (r_tmp + 1.0)
-        return s_tmp, r_tmp, o_tmp
-
-    def shc_evaluation(self, o_tmp, best_o):
-        if best_o < o_tmp:
-            return True
-        else:
-            return False
-
-    def get_random_sibling_label(self, label):
-        ret = []
-        if len(label) <= self._hops / 2:
-            for i in range(len(label)):
-                ret.append(np.random.randint(self._branching_factors[i]))
-        else:
-            match_len = len(label) - self._hops / 2
-            ret = label[:match_len]
-            for i in range(len(label) - match_len):
-                ret.append(np.random.randint(self._branching_factors[i + match_len]))
-        return ret
-
-    def get_random_sibling_labels(self, curr_labels, allowed_finger_combos=None):
-        labels_tmp = []
-        if allowed_finger_combos is None:
-            for i in range(self._num_contacts):
-                tmp = []
-                # while tmp in labels_tmp or len(tmp) == 0:
-                # TODO what is this loop for? we would never get this result from get_sibling_label
-                while len(tmp) == 0:
-                    tmp = self.get_random_sibling_label(curr_labels[i])
-                labels_tmp.append(tmp)
-        else:
-            finger_combo = random.choice(allowed_finger_combos)
-            for i in range(self._num_contacts):
-                tmp = list(curr_labels[i])
-                tmp[-1] = finger_combo[i]
-                labels_tmp.append(tmp)
-        return labels_tmp
-
-    def get_branch_information(self, level):
-        if level < self.get_maximum_depth():
-            possible_num_children = pow(self._branching_factors[level] + 1, self._num_contacts)
-            possible_num_leaves = 1
-            for d in range(level, self.get_maximum_depth()):
-                possible_num_leaves *= pow(self._branching_factors[level] + 1, self._num_contacts)
-        else:
-            possible_num_children = 0
-            possible_num_leaves = 1
-        return possible_num_children, possible_num_leaves
-
-    def get_root_node(self):
-        possible_num_children, possible_num_leaves = self.get_branch_information(0)
-        return HFTSNode(num_possible_children=possible_num_children,
-                        num_possible_leaves=possible_num_leaves)
-
-    def get_maximum_depth(self):
-        return self._num_levels
 
     def set_max_iter(self, m):
         assert m > 0
@@ -465,28 +435,46 @@ class HFTSSampler:
         # TODO this is Robotiq hand specific
         self._hand_manifold.set_parameters(com_center_weight, pos_reach_weight, angle_reach_weight)
 
-    def comply_eef(self):
-        # TODO this seems to be Robotiq hand specific
-        curr_conf = self._robot.GetDOFValues()
-        for i in range(100):
-            curr_conf[1] += 0.01
-            self._robot.SetDOFValues(curr_conf)
-            if self.are_fingertips_in_contact():
-                break
+    def shc_evaluation(self, o_tmp, best_o):
+        if best_o < o_tmp:
+            return True
+        else:
+            return False
 
-    def are_fingertips_in_contact(self):
-        links = self._robot.get_fingertip_links()
-        for link in links:
-            if not self._orEnv.CheckCollision(self._robot.GetLink(link)):
-                return False
-        return True
-    
-    def is_grasp_collision_free(self):
-        links = self._robot.get_non_fingertip_links()
-        for link in links:
-            if self._orEnv.CheckCollision(self._robot.GetLink(link)):
-                return False
-        return True
+    def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False):
+        # TODO this method as it is right now is only useful for the Robotiq hand.
+        self._robot.SetDOFValues(grasp_conf)
+        try:
+            T = self._robot.hand_obj_transform(hand_contacts[:3, :3], object_contacts[:, :3])
+            self._robot.SetTransform(T)
+        except InvalidTriangleException as ite:
+            logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
+            return False
+        self.close_fingers_until_contact()
+        if self.check_grasp_validity():
+            return True
+        self.swap_contacts([0, 1], object_contacts)
+        self._robot.SetDOFValues(grasp_conf)
+        try:
+            T = self._robot.hand_obj_transform(hand_contacts[:3, :3], object_contacts[:, :3])
+            self._robot.SetTransform(T)
+        except InvalidTriangleException as ite:
+            logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
+            return False
+        self.close_fingers_until_contact()
+        return self.check_grasp_validity()
+
+    def swap_contacts(self, rows, object_contacts):
+        frm = rows[0]
+        to = rows[1]
+        object_contacts[[frm, to], :] = object_contacts[[to, frm], :]
+
+    def pick_new_start_node(self):
+        num_nodes_top_level = self._branching_factors[0]
+        contact_label = []
+        for i in range(self._num_contacts):
+            contact_label.append([random.choice(range(num_nodes_top_level + 1))])
+        return contact_label
 
     def plot_clusters(self, contact_labels):
         if not self._sampler_viewer:
@@ -500,9 +488,6 @@ class HFTSSampler:
             points = [self._data_labeled[t, 0:3] for t in idx][0]
             points = np.asarray(points)
             self.cloud_plot.append(self._orEnv.plot3(points=points, pointsize=0.006, colors=colors[i], drawstyle=1))
-
-    def avoid_collision_at_fingers(self, n_step):
-        return self._robot.avoid_collision_at_fingers(n_step)
 
 
 class HFTSNode:
