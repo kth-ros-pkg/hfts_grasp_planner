@@ -154,7 +154,8 @@ class IntegratedHFTSPlanner(object):
                        use_approximates=None, compute_velocities=None,
                        time_limit=None, com_center_weight=None,
                        pos_reach_weight=None, angle_reach_weight=None,
-                       reachability_weight=None):
+                       reachability_weight=None, hfts_generation_params=None,
+                       b_force_new_hfts=None):
         # TODO some of these parameters are robot hand specific
         if time_limit is not None:
             self._time_limit = time_limit
@@ -163,6 +164,8 @@ class IntegratedHFTSPlanner(object):
         self._grasp_planner.set_parameters(com_center_weight=com_center_weight,
                                            pos_reach_weight=pos_reach_weight,
                                            angle_reach_weight=angle_reach_weight,
-                                           reachability_weight=reachability_weight)
+                                           reachability_weight=reachability_weight,
+                                           b_force_new_hfts=b_force_new_hfts,
+                                           hfts_generation_params=hfts_generation_params)
         # TODO implement the rest
 

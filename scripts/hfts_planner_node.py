@@ -49,13 +49,22 @@ class HandlerClass(object):
         """ Callback function for a grasp planning servce request. """
         # TODO generate HFTS from point cloud if point cloud is specified
         # pointCloud = req.point_cloud
+        rospy.loginfo('Executing planner with parameters: ' + str(self._params))
         # Load the requested object first
         self._planner.load_object(req.object_identifier)
+        hfts_gen_params = {'max_normal_variance': self._params['max_normal_variance'],
+                           'min_contact_patch_radius': self._params['min_contact_patch_radius'],
+                           'max_num_points': self._params['max_num_points'],
+                           'position_weight': self._params['hfts_position_weight'],
+                           'branching_factor': self._params['hfts_branching_factor'],
+                           'first_level_branching_factor': self._params['hfts_first_level_branching_factor']}
         self._planner.set_parameters(max_iters=self._params['num_hfts_iterations'],
                                      reachability_weight=self._params['reachability_weight'],
                                      com_center_weight=self._params['com_center_weight'],
                                      angle_reach_weight=self._params['normal_reachability_weight'],
-                                     pos_reach_weight=self._params['position_reachability_weight'])
+                                     pos_reach_weight=self._params['position_reachability_weight'],
+                                     hfts_generation_params=hfts_gen_params,
+                                     b_force_new_hfts=self._params['force_new_hfts'])
         # We always start from the root node, so create a root node
         root_hfts_node = HFTSNode()
         num_planning_attempts = self._params['num_planning_attempts']

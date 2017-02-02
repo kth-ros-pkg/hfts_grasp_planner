@@ -25,33 +25,12 @@ class PlanningSceneInterface(object):
                                                                                iktype=orpy.IkParameterization.Type.Transform6D)
         # Make sure we have an ik solver
         if not self._arm_ik.load():
-            rospy.loginfo('Not IKFast solution found. Computing new one...')
+            rospy.loginfo('No IKFast solver found. Generating new one...')
             self._arm_ik.autogenerate()
         self._object = None
 
     def set_target_object(self, obj_name):
         self._object = self._or_env.GetKinBody(obj_name)
-
-    # # TODO this is a hack for the kwr (7DoFs -> need to sample 1 DoF)
-    # # TODO this should be done in a robot specific class
-    # def seven_dof_ik(self, pose, ik_options, max_iterations=2, free_joint_index=0):
-    #     sol = None
-    #     lower_limits, upper_limits = self._manip.GetRobot().GetDOFLimits()
-    #     min_v, max_v = lower_limits[free_joint_index], upper_limits[free_joint_index]
-    #     stride = (max_v - min_v) / 2.0
-    #     num_steps = 2
-    #     for i in range(max_iterations):
-    #         for j in range(1, num_steps, 2):
-    #             v = min_v + j * stride
-    #             self._robot.SetDOFValues([v], [free_joint_index])
-    #             sol = self._manip.FindIKSolution(pose, ik_options)
-    #             if sol is not None:
-    #                 extended_sol = [v]
-    #                 extended_sol.extend(sol)
-    #                 return extended_sol
-    #         num_steps *= 2
-    #         stride /= 2.0
-    #     return sol
 
     def check_arm_ik(self, hand_pose_object, grasp_conf, seed, open_hand_offset):
         with self._or_env:
@@ -73,7 +52,7 @@ class PlanningSceneInterface(object):
             # Now find an ik solution for the target pose with the hand in the pre-grasp configuration
             sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
             # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.CheckEnvCollisions)
-            # If that didn't work, try to compute a solution the is in collision (may be useful anyways)
+            # If that didn't work, try to compute a solution that is in collision (may be useful anyways)
             if sol is None:
                 # sol = self.seven_dof_ik(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
                 sol = self._manip.FindIKSolution(hand_pose_scene, orpy.IkFilterOptions.IgnoreCustomFilters)
@@ -94,12 +73,16 @@ class HFTSSampler:
         self._orEnv.GetCollisionChecker().SetCollisionOptions(orpy.CollisionOptions.Contacts)
         if vis:
             self._orEnv.SetViewer('qtcoin') # attach viewer (optional)
+            self._or_handles = []
+        else:
+            self._or_handles = None
         self._scene_or_env = None
         self._hand_loaded = False
         self._scene_interface = scene_interface
         self._obj_loaded = False
         self._max_iters = 40
         self._reachability_weight = 1.0
+        self._b_force_new_hfts = False
         self._hops = num_hops
         self._pre_gasp_conf = None
         self._arm_conf = None
@@ -113,8 +96,6 @@ class HFTSSampler:
         self._contact_combinations = []
         self._num_levels = 0
         self._branching_factors = []
-        self.handles = []
-        self.tip_pn_handler = []
         self._object_io_interface = object_io_interface
 
     def __del__(self):
@@ -152,8 +133,6 @@ class HFTSSampler:
                           self._robot.GetDOFLimits()[0],
                           self._robot.GetDOFLimits()[1])
         self._robot.SetDOFValues(mean_values, range(len(mean_values)))
-        self.handles = []
-        self.tip_pn_handler = []
 
     def compute_allowed_contact_combinations(self, depth, label_cache):
         # Now, for this parent get all possible contacts
@@ -188,6 +167,18 @@ class HFTSSampler:
         dummy, grasp_conf = self._hand_manifold.predict_hand_conf(code_tmp)
         hand_contacts = self._robot.get_ori_tip_pn(grasp_conf)
         return grasp_conf, object_contacts, hand_contacts
+
+    def draw_contacts(self, object_contacts):
+        self._or_handles = []
+        # TODO this is hard coded for three contacts
+        colors = [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]]
+        width = 0.001
+        length = 0.01
+        # Draw planned contacts
+        for i in range(object_contacts.shape[0]):
+            self._or_handles.append(self._orEnv.drawarrow(object_contacts[i, :3],
+                                                          object_contacts[i, :3] - length * object_contacts[i, 3:],
+                                                          width, colors[i]))
 
     def evaluate_grasp(self, contact_label):
         contacts = [] # a list of contact positions and normals
@@ -296,7 +287,7 @@ class HFTSSampler:
         if model_id is None:
             model_id = obj_id
         self._data_labeled, self._branching_factors, self._obj_com = \
-            self._object_io_interface.get_hfts(model_id)
+            self._object_io_interface.get_hfts(model_id, self._b_force_new_hfts)
         if self._data_labeled is None:
             raise RuntimeError('Could not load HFTS model for model ' + model_id)
         self._num_levels = len(self._branching_factors)
@@ -369,21 +360,21 @@ class HFTSSampler:
         # if post_opt:
         #     rospy.logdebug('[HFTSSampler::sample_grasp] Doing post optimization for node %s' % str(contact_label))
         # Compute grasp quality (a combination of stability, reachability and collision conditions)
-        try:
-            b_robotiq_ok = self.simulate_grasp(grasp_conf=grasp_conf,
-                                               hand_contacts=hand_contacts,
-                                               object_contacts=object_contacts,
-                                               post_opt=post_opt)
-            if b_robotiq_ok:
-                sample_q = 0
-                stability = best_o
-            else:
-                sample_q = 4
-                stability = 0.0
-        except InvalidTriangleException:
-            grasp_conf = None
+        # try:
+        b_robotiq_ok = self.simulate_grasp(grasp_conf=grasp_conf,
+                                           hand_contacts=hand_contacts,
+                                           object_contacts=object_contacts,
+                                           post_opt=post_opt)
+        if b_robotiq_ok:
+            sample_q = 0
+            stability = best_o
+        else:
             sample_q = 4
             stability = 0.0
+        # except InvalidTriangleException:
+        #     grasp_conf = None
+        #     sample_q = 4
+        #     stability = 0.0
 
         is_leaf = (len(contact_label[0]) == self._num_levels)
         is_goal_sample = (sample_q == 0) and is_leaf
@@ -425,7 +416,8 @@ class HFTSSampler:
 
     def set_parameters(self, max_iters=None, reachability_weight=None,
                        com_center_weight=None, pos_reach_weight=None,
-                       angle_reach_weight=None):
+                       angle_reach_weight=None, hfts_generation_params=None,
+                       b_force_new_hfts=None):
         if max_iters is not None:
             self._max_iters = max_iters
             assert self._max_iters > 0
@@ -434,6 +426,10 @@ class HFTSSampler:
             assert self._reachability_weight >= 0.0
         # TODO this is Robotiq hand specific
         self._hand_manifold.set_parameters(com_center_weight, pos_reach_weight, angle_reach_weight)
+        if hfts_generation_params is not None:
+            self._object_io_interface.set_hfts_generation_parameters(hfts_generation_params)
+        if b_force_new_hfts is not None:
+            self._b_force_new_hfts = b_force_new_hfts
 
     def shc_evaluation(self, o_tmp, best_o):
         if best_o < o_tmp:
@@ -452,6 +448,7 @@ class HFTSSampler:
             return False
         self.close_fingers_until_contact()
         if self.check_grasp_validity():
+            self.draw_contacts(object_contacts)
             return True
         self.swap_contacts([0, 1], object_contacts)
         self._robot.SetDOFValues(grasp_conf)
@@ -461,6 +458,7 @@ class HFTSSampler:
         except InvalidTriangleException as ite:
             logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
             return False
+        self.draw_contacts(object_contacts)
         self.close_fingers_until_contact()
         return self.check_grasp_validity()
 

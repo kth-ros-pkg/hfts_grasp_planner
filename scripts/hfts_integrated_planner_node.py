@@ -133,11 +133,19 @@ class HandlerClass(object):
     def handle_plan_request(self, request):
         # TODO: update planner parameters
         rospy.loginfo('Executing planner with parameters: ' + str(self._params))
+        hfts_gen_params = {'max_normal_variance': self._params['max_normal_variance'],
+                           'min_contact_patch_radius': self._params['min_contact_patch_radius'],
+                           'max_num_points': self._params['max_num_points'],
+                           'position_weight': self._params['hfts_position_weight'],
+                           'branching_factor': self._params['hfts_branching_factor'],
+                           'first_level_branching_factor': self._params['hfts_first_level_branching_factor']}
         self._planner.set_parameters(time_limit=self._params['time_limit'],
                                      compute_velocities=self._params['compute_velocities'],
                                      com_center_weight=self._params['com_center_weight'],
                                      pos_reach_weight=self._params['position_reachability_weight'],
-                                     angle_reach_weight=self._params['normal_reachability_weight'])
+                                     angle_reach_weight=self._params['normal_reachability_weight'],
+                                     hfts_generation_params=hfts_gen_params,
+                                     b_force_new_hfts=self._params['force_new_hfts'])
         response = PlanGraspMotionResponse()
         obj_id = request.object_identifier
         model_id = request.model_identifier

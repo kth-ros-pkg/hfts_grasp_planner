@@ -15,6 +15,13 @@ from stl import mesh as stl_mesh_module
 from abc import ABCMeta, abstractmethod
 import openravepy as orpy
 
+DEFAULT_HFTS_GENERATION_PARAMS = {'max_normal_variance': 0.2,
+                                  'min_contact_patch_radius': 0.015,
+                                  'max_num_points': 10000,
+                                  'position_weight': 2,
+                                  'branching_factor': 4,
+                                  'first_level_branching_factor': 3}
+
 
 class ObjectIO(object):
     __metaclass__ = ABCMeta
@@ -29,10 +36,12 @@ class ObjectIO(object):
 
 
 class ObjectFileIO(ObjectIO):
-    def __init__(self, data_path, var_filter=True, filter_threshold=0.2, max_num_points=10000):
+    def __init__(self, data_path, var_filter=True,
+                 hfts_generation_parameters=DEFAULT_HFTS_GENERATION_PARAMS,
+                 max_num_points=10000):
         self._data_path = data_path
         self._b_var_filter = var_filter
-        self._filter_threshold = filter_threshold
+        self._hfts_generation_params = hfts_generation_parameters
         self._max_num_points = max_num_points
         self._last_obj_id = None
         self._last_hfts = None
@@ -49,7 +58,7 @@ class ObjectFileIO(ObjectIO):
             points = read_stl_file(obj_file + file_extension)
         if points is not None:
             if self._b_var_filter:
-                points = filter_points(points, self._filter_threshold, self._max_num_points)
+                points = filter_points(points, self._hfts_generation_params)
         else:
             rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + str(file_extension) +
                          ' file for object ' + obj_id)
@@ -74,12 +83,47 @@ class ObjectFileIO(ObjectIO):
 
     def get_hfts(self, obj_id, force_new=False):
         # Check whether we have an HFTS for this object in memory
-        if self._last_obj_id != obj_id:
+        if self._last_obj_id != obj_id or force_new:
             # If not update
             b_success = self._update_hfts(obj_id, force_new)
             if not b_success:
                 return None, None, None
         return self._last_hfts, self._last_hfts_param.astype(int), self._last_obj_com
+
+    def _read_hfts(self, obj_id, hfts_file, hfts_param_file, obj_com_file):
+        if os.path.exists(hfts_file) and os.path.isfile(hfts_file) \
+                and os.path.exists(hfts_param_file) and os.path.isfile(hfts_param_file) \
+                and os.path.exists(obj_com_file) and os.path.isfile(obj_com_file):
+            self._last_obj_id = obj_id
+            self._last_hfts = np.load(hfts_file)
+            self._last_hfts_param = np.load(hfts_param_file)
+            self._last_obj_com = np.load(obj_com_file)
+            return True
+        return False
+
+    def set_hfts_generation_parameters(self, params):
+        if type(params) is not dict:
+            raise TypeError('ObjectFileIO::set_hfts_generation_parameters] Expected a dictionary, received ' + str(type(params)))
+        self._hfts_generation_params = params
+
+    def show_hfts(self, level):
+        if self._last_hfts is None:
+            rospy.logerr('[ObjectFileIO::show_hfts] Non hfts model loaded.')
+            return
+        if level > len(self._last_hfts_param) - 1:
+            raise ValueError('[objectFileIO::showHFTS] level ' + str(level) + ' does not exist')
+        b_factors = []
+        for i in range(level + 1):
+            b_factors.append(np.arange(self._last_hfts_param[i]))
+        labels = itertools.product(*b_factors)
+        hfts_labels = self._last_hfts[:, 6:7 + level]
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        for label in labels:
+            idx = np.where((hfts_labels == label).all(axis=1))[0]
+            cluster_points = self._last_hfts[idx, :3]
+            ax.scatter(cluster_points[:, 0], cluster_points[:, 1], cluster_points[:, 2], c=np.random.rand(3,1), s = 100)
+        plt.show()
 
     def _update_hfts(self, obj_id, force_new=False):
         """ Updates the cached hfts """
@@ -100,6 +144,8 @@ class ObjectFileIO(ObjectIO):
             return False
         # If we have points, generate an hfts
         hfts_gen = HFTSGenerator(points)
+        hfts_gen.set_branch_factor(extract_hfts_gen_parameter(self._hfts_generation_params, 'branching_factor'))
+        hfts_gen.set_position_weight(extract_hfts_gen_parameter(self._hfts_generation_params, 'position_weight'))
         hfts_gen.run()
         self._last_obj_id = obj_id
         self._last_hfts = hfts_gen.get_hfts()
@@ -108,37 +154,6 @@ class ObjectFileIO(ObjectIO):
         hfts_gen.save_hfts(hfts_file=hfts_file, hfts_param_file=hfts_param_file,
                            com_file=obj_com_file)
         return True
-
-    def _read_hfts(self, obj_id, hfts_file, hfts_param_file, obj_com_file):
-        if os.path.exists(hfts_file) and os.path.isfile(hfts_file) \
-                and os.path.exists(hfts_param_file) and os.path.isfile(hfts_param_file) \
-                and os.path.exists(obj_com_file) and os.path.isfile(obj_com_file):
-            self._last_obj_id = obj_id
-            self._last_hfts = np.load(hfts_file)
-            self._last_hfts_param = np.load(hfts_param_file)
-            self._last_obj_com = np.load(obj_com_file)
-            return True
-        return False
-
-    def show_hfts(self, level):
-        # TODO This function is only for debugging purpose, will be removed
-        if self._last_hfts is None:
-            rospy.logerr('[ObjectFileIO::show_hfts] Non hfts model loaded.')
-            return
-        if level > len(self._last_hfts_param) - 1:
-            raise ValueError('[objectFileIO::showHFTS] level ' + str(level) + ' does not exist')
-        b_factors = []
-        for i in range(level + 1):
-            b_factors.append(np.arange(self._last_hfts_param[i]))
-        labels = itertools.product(*b_factors)
-        hfts_labels = self._last_hfts[:, 6:7 + level]
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        for label in labels:
-            idx = np.where((hfts_labels == label).all(axis=1))[0]
-            cluster_points = self._last_hfts[idx, :3]
-            ax.scatter(cluster_points[:, 0], cluster_points[:, 1], cluster_points[:, 2], c=np.random.rand(3,1), s = 100)
-        plt.show()
 
 
 class HFTSGenerator:
@@ -229,26 +244,36 @@ class HFTSGenerator:
         return self._hfts_param
 
 
-def filter_points(points, filter_threshold, max_num_points):
+def extract_hfts_gen_parameter(param_dict, name):
+    if name in param_dict:
+        return param_dict[name]
+    elif name in DEFAULT_HFTS_GENERATION_PARAMS:
+        return DEFAULT_HFTS_GENERATION_PARAMS[name]
+    else:
+        raise ValueError('[utils::extract_hfts_gen_parameter] Unknown HFTS generation parameter ' + str(name))
+
+
+def filter_points(points, parameters):
     kdt = KDTree(points[:, :3], leaf_size=6, metric='euclidean')
     rospy.loginfo('Filtering points for constructing HFTS')
     vld_idx = np.ones(points.shape[0], dtype=bool)
     i = 0
     for p in points:
         # nb_idx = kdt.query([p[:3]], k=20, return_distance=False)[0]
-        nb_idx = kdt.query_radius(p[:3], r=0.01)[0]
+        radius = extract_hfts_gen_parameter(parameters, 'min_contact_patch_radius')
+        nb_idx = kdt.query_radius(p[:3], r=radius)[0]
         if len(nb_idx) == 0:
             continue
         nb_points_normals = points[nb_idx, 3:]
         var = np.var(nb_points_normals, axis=0)
-        if max(var) > filter_threshold:
+        if max(var) > extract_hfts_gen_parameter(parameters, 'max_normal_variance'):
             vld_idx[i] = False
         i += 1
     points = points[vld_idx, :]
+    max_num_points = extract_hfts_gen_parameter(parameters, 'max_num_points')
     if points.shape[0] > max_num_points:
         vld_idx = np.random.choice(points.shape[0], max_num_points, replace=False)
         points = points[vld_idx, :]
-        # points = [points[i] for i in range(len(points)) if i in vld_idx]
     assert points.shape[0] <= max_num_points
     return points
 
@@ -270,13 +295,13 @@ def read_ply_file(file_id):
 
 
 def read_stl_file(file_id):
-    stl_mesh = stl_mesh_module.Mesh.from_file(file_id)
+    stl_mesh = stl_mesh_module.Mesh.from_file(file_id, calculate_normals=False)
     points = np.zeros((len(stl_mesh.points), 6))
     # Extract points with normals from the mesh surface
     for face_idx in range(len(stl_mesh.points)):
         # For this, we select the center of each face
         points[face_idx, 0:3] = (stl_mesh.v0[face_idx] + stl_mesh.v1[face_idx] + stl_mesh.v2[face_idx]) / 3.0
-        points[face_idx, 3:6] = stl_mesh.normals[face_idx]
+        points[face_idx, 3:6] = stl_mesh.normals[face_idx] / np.linalg.norm(stl_mesh.normals[face_idx])
     return points
 
 
@@ -371,6 +396,11 @@ class OpenRAVEDrawer:
         for bTree in backward_trees:
             # logging.debug('Backward tree of size: ' + str(bTree.size()))
             self.draw_tree(bTree, color=[0, 0, 1])
+
+    def draw_arrow(self, point, dir, length=0.04, width=0.01, color=None):
+        if color is None:
+            color = [1, 0, 0, 1]
+        self.handles.append(self.or_env.drawarrow(point, point + length * dir, width, color))
 
     def draw_bounding_box(self, abb, color=[0.3, 0.3, 0.3], width=1.0):
         position = abb.pos()

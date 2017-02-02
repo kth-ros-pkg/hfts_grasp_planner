@@ -1,5 +1,5 @@
-visualize_grasps: False
-visualize_system: True
+visualize_grasps: True
+visualize_system: False
 visualize_hfts: True
 show_trajectory: True
 show_search_tree: True

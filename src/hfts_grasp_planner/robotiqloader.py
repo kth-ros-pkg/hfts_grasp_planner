@@ -273,8 +273,9 @@ class RobotiqHandVirtualManifold:
         r = (pos_residual0 + pos_residual1) * self._pos_reach_weight +\
             self._angle_reach_weight * (angle_residual0 + angle_residual1)
         return r
-        
-    def encode_grasp(self, grasp):
+
+    @staticmethod
+    def encode_grasp(grasp):
         """
             Encodes the given grasp (rotationally invariant).
         :param grasp: The grasp to encode. It is assumed the grasp is a matrix of the following format:
