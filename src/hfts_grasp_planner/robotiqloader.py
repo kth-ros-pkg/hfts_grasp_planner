@@ -132,15 +132,19 @@ class RobotiqHand:
         frame = np.transpose([x, y, z])
         return np.asarray(frame)
 
-    def close_fingers_until_contact(self, n_step):
+    def comply_fingertips(self, n_step=100):
         """
-            Closes the hand until all fingertips are in contact.
-        :param n_step:
+            Opens and closes the hand until all and only fingertips are in contact.
+        :param n_step: maximal number of iterations
         :return:
         """
+        joint_index = self.GetJoint(LAST_FINGER_JOINT).GetDOFIndex()
+        closed_conf = self.GetDOFValues()
+        n_step /= 2
+        self.avoid_collision_at_fingers(n_step)
         curr_conf = self.GetDOFValues()
-        for i in range(100):
-            curr_conf[1] += 0.01
+        for i in range(n_step):
+            curr_conf[joint_index] += i * (closed_conf[joint_index] - curr_conf[joint_index] / n_step)
             self.SetDOFValues(curr_conf)
             if self.are_fingertips_in_contact():
                 break
@@ -160,13 +164,13 @@ class RobotiqHand:
         """
         if n_step <= 0:
             n_step = 1
-        finger_joint_idx = self._or_hand.GetJoint(LAST_FINGER_JOINT).GetDOFIndex()
-        start_value = self._or_hand.GetDOFValues()[finger_joint_idx]  # Last joint value opens the fingers
-        step = (self._or_hand.GetDOFLimits()[0][finger_joint_idx] - start_value) / n_step
+        finger_joint_idx = self.GetJoint(LAST_FINGER_JOINT).GetDOFIndex()
+        start_value = self.GetDOFValues()[finger_joint_idx]  # Last joint value opens the fingers
+        step = (self.GetDOFLimits()[0][finger_joint_idx] - start_value) / n_step
         for i in range(n_step):
             if not self._or_env.CheckCollision(self._or_hand):
                 return True
-            self._or_hand.SetDOFValues([start_value + i * step], [finger_joint_idx])
+            self.SetDOFValues([start_value + i * step], [finger_joint_idx])
         return False
 
     
@@ -175,11 +179,14 @@ class RobotiqHandVirtualManifold:
         Mimic the hand manifold interface from our ICRA'16 paper,
         it is not needed to model a reachability manifold for the Robotiq-S.
     """
-    def __init__(self, or_hand, com_center_weight=0.1, pos_reach_weight=10.0, angle_reach_weight=10.0):
+    def __init__(self, or_hand, com_center_weight=0.5, pos_reach_weight=5.0, f01_parallelism_weight=1.0,
+                 grasp_symmetry_weight=1.0, grasp_flatness_weight=1.0):
         self._or_hand = or_hand
         self._com_center_weight = com_center_weight
         self._pos_reach_weight = pos_reach_weight
-        self._angle_reach_weight = angle_reach_weight
+        self._f01_parallelism_weight = f01_parallelism_weight
+        self._grasp_symmetry_weight = grasp_symmetry_weight
+        self._grasp_flatness_weight = grasp_flatness_weight
         # The distances between fingertip 0 and 1, we can achieve:
         self._distance_range_0 = np.array([0.0255, 0.122])
         # The distances between the center of contacts 0,1 and contact 2, we can achieve:
@@ -194,13 +201,18 @@ class RobotiqHandVirtualManifold:
         self._lin_factor_1 = (self._upper_limits[1] - self._lower_limits[1]) / \
                              (self._distance_range_1[1] - self._distance_range_1[0])  # for joint 1
 
-    def set_parameters(self, com_center_weight=None, pos_reach_weight=None, angle_reach_weight=None):
+    def set_parameters(self, com_center_weight=None, pos_reach_weight=None, f01_parallelism_weight=None,
+                       grasp_symmetry_weight=None, grasp_flatness_weight=None):
         if com_center_weight is not None:
             self._com_center_weight = com_center_weight
         if pos_reach_weight is not None:
             self._pos_reach_weight = pos_reach_weight
-        if angle_reach_weight is not None:
-            self._angle_reach_weight = angle_reach_weight
+        if f01_parallelism_weight is not None:
+            self._f01_parallelism_weight = f01_parallelism_weight
+        if grasp_symmetry_weight is not None:
+            self._grasp_symmetry_weight = grasp_symmetry_weight
+        if grasp_flatness_weight is not None:
+            self._grasp_flatness_weight = grasp_flatness_weight
 
     def predict_hand_conf(self, q):
         """
@@ -248,30 +260,40 @@ class RobotiqHandVirtualManifold:
              [position, normal]] where all vectors are defined in the object's frame.
         :return: a floating point number representing the quality (the larger, the better)
         """
+        # The idea is that a grasp with the Robotiq hand is most stable if the contacts
+        # span a large triangle and the center of mass of the object is close this triangle's
+        # center
+        vec_01 = grasp[1, :3] - grasp[0, :3]
+        vec_02 = grasp[2, :3] - grasp[0, :3]
+        triangle_normal = np.cross(vec_01, vec_02)
+        triangle_area = np.linalg.norm(triangle_normal)
+        triangle_normal /= triangle_area
+        triangle_center = np.sum(grasp, 0)[:3] / 3.0
+        return triangle_area - self._com_center_weight * np.linalg.norm(obj_com - triangle_center)
+
         # TODO need to be tested
-        contacts = grasp[:, :3]
-        # Let's express the contacts in a frame centered at the center of mass
-        center_shift = contacts - obj_com
-        # We would like contacts to be close around the center of mass.
-        # To measure this, we take the Frobenius norm of center_shift
-        d = np.linalg.norm(center_shift)
-        vec_10 = grasp[0, :3] - grasp[1, :3]
-        center_01 = (grasp[0, :3] + grasp[1, :3]) / 2.
-        vec_c2 = grasp[2, :3] - center_01
-        dist_10 = np.linalg.norm(vec_10)
-        dist_c2 = np.linalg.norm(vec_c2)
-        # We want contacts to be centered around the center of mass
-        # and at the same time would like to spread the contacts apart, so that
-        # we have a high resistance against external torques.
-        return dist_10 + dist_c2 - self._com_center_weight * d
+        # contacts = grasp[:, :3]
+        # # Let's express the contacts in a frame centered at the center of mass
+        # center_shift = contacts - obj_com
+        # # We would like contacts to be close around the center of mass.
+        # # To measure this, we take the Frobenius norm of center_shift
+        # d = np.linalg.norm(center_shift)
+        # vec_10 = grasp[0, :3] - grasp[1, :3]
+        # center_01 = (grasp[0, :3] + grasp[1, :3]) / 2.
+        # vec_c2 = grasp[2, :3] - center_01
+        # dist_10 = np.linalg.norm(vec_10)
+        # dist_c2 = np.linalg.norm(vec_c2)
+        # # We want contacts to be centered around the center of mass
+        # # and at the same time would like to spread the contacts apart, so that
+        # # we have a high resistance against external torques.
+        # return dist_10 + dist_c2 - self._com_center_weight * d
         
     def get_pred_res(self, q):
         pos_residual0 = dist_in_range(q[0], self._distance_range_0)
         pos_residual1 = dist_in_range(q[1], self._distance_range_1)
-        angle_residual0 = q[2]
-        angle_residual1 = q[3]
-        r = (pos_residual0 + pos_residual1) * self._pos_reach_weight +\
-            self._angle_reach_weight * (angle_residual0 + angle_residual1)
+        r = self._pos_reach_weight * (pos_residual0 + pos_residual1) -\
+            self._f01_parallelism_weight * q[2] + self._grasp_symmetry_weight * q[3] + \
+            self._grasp_flatness_weight * q[4]
         return r
 
     @staticmethod
@@ -289,12 +311,23 @@ class RobotiqHandVirtualManifold:
             angle_difference_201 is the difference in angle between normals of contact 2 and - avg_normal of
                 contact 0 and 1
         """
-        vec_10 = grasp[0, :3] - grasp[1, :3]
-        center_01 = (grasp[0, :3] + grasp[1, :3]) / 2.
+        vec_01 = grasp[1, :3] - grasp[0, :3]
+        vec_02 = grasp[2, :3] - grasp[0, :3]
+        center_01 = (grasp[0, :3] + grasp[1, :3]) / 2.0
+        triangle_normal = np.cross(vec_01, vec_02)
+        triangle_normal /= np.linalg.norm(triangle_normal)
         vec_c2 = grasp[2, :3] - center_01
-        distance_10 = np.linalg.norm(vec_10)
-        distance_c2 = np.linalg.norm(vec_c2)
-        angle_diff_01 = vec_angel_diff(grasp[0, 3:], grasp[1, 3:])
         avg_normal_01 = (grasp[0, 3:] + grasp[1, 3:]) / 2.
-        angle_diff_201 = vec_angel_diff(grasp[2, 3:], -avg_normal_01)
-        return [distance_10, distance_c2, angle_diff_01, angle_diff_201]
+        # Features:
+        distance_10 = np.linalg.norm(vec_01)
+        distance_c2 = np.linalg.norm(vec_c2)
+        parallelism_01 = np.dot(grasp[0, 3:], grasp[1, 3:])
+        parallelism_201 = np.dot(grasp[2, 3:], avg_normal_01)
+        parallelism_triangle = np.abs(np.dot(triangle_normal, grasp[0, 3:])) + \
+                               np.abs(np.dot(triangle_normal, grasp[1, 3:])) + \
+                               np.abs(np.dot(triangle_normal, grasp[2, 3:]))
+
+        return [distance_10, distance_c2, parallelism_01, parallelism_201, parallelism_triangle]
+        # angle_diff_01 = vec_angel_diff(grasp[0, 3:], grasp[1, 3:])
+        # angle_diff_201 = vec_angel_diff(grasp[2, 3:], -avg_normal_01)
+        # return [distance_10, distance_c2, angle_diff_01, angle_diff_201]

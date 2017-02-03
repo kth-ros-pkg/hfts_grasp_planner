@@ -153,9 +153,6 @@ class HFTSSampler:
             self._contact_combinations[i] = set(itertools.product(range(self._branching_factors[i]),
                                                                   repeat=self._num_contacts))
 
-    def close_fingers_until_contact(self):
-        self._robot.close_fingers_until_contact(100)
-
     def compose_grasp_info(self, contact_labels):
         contacts = [] # a list of contact positions and normals
         for i in range(self._num_contacts):
@@ -168,14 +165,26 @@ class HFTSSampler:
         hand_contacts = self._robot.get_ori_tip_pn(grasp_conf)
         return grasp_conf, object_contacts, hand_contacts
 
+    def _debug_visualize(self, labels):
+        grasp_conf, object_contacts, hand_contacts = self.compose_grasp_info(labels)
+        rospy.logwarn('Debug visualize')
+        self._robot.SetVisible(False)
+        self.draw_contacts(object_contacts)
+        # time.sleep(1.0)
+        # self._robot.SetVisible(True)
+
     def draw_contacts(self, object_contacts):
         self._or_handles = []
         # TODO this is hard coded for three contacts
         colors = [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]]
         width = 0.001
-        length = 0.01
+        length = 0.1
         # Draw planned contacts
         for i in range(object_contacts.shape[0]):
+            rospy.logwarn(str(object_contacts[i]))
+            normal_01 = (object_contacts[0, 3:] + object_contacts[1, :3]) / 2.0
+            normal_2 = object_contacts[2, 3:]
+            rospy.logwarn('Dot product: ' + str(np.dot(normal_01, normal_2)))
             self._or_handles.append(self._orEnv.drawarrow(object_contacts[i, :3],
                                                           object_contacts[i, :3] - length * object_contacts[i, 3:],
                                                           width, colors[i]))
@@ -349,6 +358,8 @@ class HFTSSampler:
                 if self.shc_evaluation(o_tmp, best_o):
                     contact_label = labels_tmp
                     best_o = o_tmp
+                    # TODO remove debug visualization again
+                    self._debug_visualize(labels_tmp)
             # Descend to next level if we iterate at least once more
             if depth_limit > 0:
                 best_o, contact_label = self.extend_hfts_node(contact_label)
@@ -416,8 +427,10 @@ class HFTSSampler:
 
     def set_parameters(self, max_iters=None, reachability_weight=None,
                        com_center_weight=None, pos_reach_weight=None,
-                       angle_reach_weight=None, hfts_generation_params=None,
+                       grasp_symmetry_weight=None, f01_parallelism_weight=None,
+                       grasp_flatness_weight=None, hfts_generation_params=None,
                        b_force_new_hfts=None):
+        # TODO some of these parameters are Robotiq hand specific. We probably wanna pass them as dictionary
         if max_iters is not None:
             self._max_iters = max_iters
             assert self._max_iters > 0
@@ -425,7 +438,8 @@ class HFTSSampler:
             self._reachability_weight = reachability_weight
             assert self._reachability_weight >= 0.0
         # TODO this is Robotiq hand specific
-        self._hand_manifold.set_parameters(com_center_weight, pos_reach_weight, angle_reach_weight)
+        self._hand_manifold.set_parameters(com_center_weight, pos_reach_weight, f01_parallelism_weight,
+                                           grasp_symmetry_weight, grasp_flatness_weight)
         if hfts_generation_params is not None:
             self._object_io_interface.set_hfts_generation_parameters(hfts_generation_params)
         if b_force_new_hfts is not None:
@@ -446,7 +460,7 @@ class HFTSSampler:
         except InvalidTriangleException as ite:
             logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
             return False
-        self.close_fingers_until_contact()
+        self._robot.comply_fingertips()
         if self.check_grasp_validity():
             self.draw_contacts(object_contacts)
             return True
@@ -459,7 +473,7 @@ class HFTSSampler:
             logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
             return False
         self.draw_contacts(object_contacts)
-        self.close_fingers_until_contact()
+        self._robot.comply_fingertips()
         return self.check_grasp_validity()
 
     def swap_contacts(self, rows, object_contacts):

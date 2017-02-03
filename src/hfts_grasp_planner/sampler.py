@@ -653,6 +653,20 @@ class FreeSpaceProximitySampler(object):
     def set_non_connected_space(self, non_connected_space):
         self._non_connected_space = non_connected_space
 
+    def set_parameters(self, min_iterations=None, max_iterations=None,
+                       free_space_weight=None, connected_space_weight=None,
+                       use_approximates=None):
+        if min_iterations is not None:
+            self._min_num_iterations = min_iterations
+        if max_iterations is not None:
+            self._num_iterations = max(1, self._goal_hierarchy.get_max_depth()) * [max_iterations]
+        if free_space_weight is not None:
+            self._free_space_weight = free_space_weight
+        if connected_space_weight is not None:
+            self._connected_weight = connected_space_weight
+        if use_approximates is not None:
+            self._b_return_approximates = use_approximates
+
     def _get_hierarchy_node(self, goal_sample):
         label = goal_sample.hierarchy_info.get_unique_label()
         b_new = False

@@ -72,12 +72,12 @@ class IntegratedHFTSPlanner(object):
             hierarchy_visualizer = FreeSpaceProximitySamplerVisualizer(self._robot)
         if num_hfts_sampling_steps <= 0:
             num_hfts_sampling_steps = self._grasp_planner.get_max_depth() + 1
-        goal_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler, k=num_hfts_sampling_steps,
-                                                 num_iterations=max_iterations, min_num_iterations=min_iterations,
-                                                 b_return_approximates=use_approximates,
-                                                 connected_weight=connected_space_weight,
-                                                 free_space_weight=free_space_weight,
-                                                 debug_drawer=hierarchy_visualizer)
+        self._hierarchy_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler, k=num_hfts_sampling_steps,
+                                                            num_iterations=max_iterations, min_num_iterations=min_iterations,
+                                                            b_return_approximates=use_approximates,
+                                                            connected_weight=connected_space_weight,
+                                                            free_space_weight=free_space_weight,
+                                                            debug_drawer=hierarchy_visualizer)
         # TODO the open hand configuration should be given from a configuration file
         self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot,
                                                                     self._cSampler, numpy.array([0.0, 0.0495]))
@@ -85,7 +85,7 @@ class IntegratedHFTSPlanner(object):
         self._debug_tree_drawer = None
         if b_show_search_tree:
             self._debug_tree_drawer = OpenRAVEDrawer(self._env, self._robot, True)
-        self._rrt_planner = RRT(p_goal_provider, self._cSampler, goal_sampler, logging.getLogger(),
+        self._rrt_planner = RRT(p_goal_provider, self._cSampler, self._hierarchy_sampler, logging.getLogger(),
                                 pgoal_tree=p_goal_tree, constraints_manager=self._constraints_manager)
         self._time_limit = time_limit
         self._last_path = None
@@ -153,7 +153,8 @@ class IntegratedHFTSPlanner(object):
                        free_space_weight=None, connected_space_weight=None,
                        use_approximates=None, compute_velocities=None,
                        time_limit=None, com_center_weight=None,
-                       pos_reach_weight=None, angle_reach_weight=None,
+                       pos_reach_weight=None, f01_parallelism_weight=None,
+                       grasp_symmetry_weight=None, grasp_flatness_weight=None,
                        reachability_weight=None, hfts_generation_params=None,
                        b_force_new_hfts=None):
         # TODO some of these parameters are robot hand specific
@@ -163,9 +164,16 @@ class IntegratedHFTSPlanner(object):
             self._compute_velocities = compute_velocities
         self._grasp_planner.set_parameters(com_center_weight=com_center_weight,
                                            pos_reach_weight=pos_reach_weight,
-                                           angle_reach_weight=angle_reach_weight,
+                                           f01_parallelism_weight=f01_parallelism_weight,
+                                           grasp_symmetry_weight=grasp_symmetry_weight,
+                                           grasp_flatness_weight=grasp_flatness_weight,
                                            reachability_weight=reachability_weight,
                                            b_force_new_hfts=b_force_new_hfts,
                                            hfts_generation_params=hfts_generation_params)
+        self._hierarchy_sampler.set_parameters(min_iterations=min_iterations,
+                                               max_iterations=max_iterations,
+                                               free_space_weight=free_space_weight,
+                                               connected_space_weight=connected_space_weight,
+                                               use_approximates=use_approximates)
         # TODO implement the rest
 
