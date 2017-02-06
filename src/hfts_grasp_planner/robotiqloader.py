@@ -291,6 +291,8 @@ class RobotiqHandVirtualManifold:
     def get_pred_res(self, q):
         pos_residual0 = dist_in_range(q[0], self._distance_range_0)
         pos_residual1 = dist_in_range(q[1], self._distance_range_1)
+        # pos_residual0 = self.exp_distance_range(q[0], self._distance_range_0)
+        # pos_residual1 = self.exp_distance_range(q[1], self._distance_range_1)
         r = self._pos_reach_weight * (pos_residual0 + pos_residual1) -\
             self._f01_parallelism_weight * q[2] + self._grasp_symmetry_weight * q[3] + \
             self._grasp_flatness_weight * q[4]
@@ -331,3 +333,12 @@ class RobotiqHandVirtualManifold:
         # angle_diff_01 = vec_angel_diff(grasp[0, 3:], grasp[1, 3:])
         # angle_diff_201 = vec_angel_diff(grasp[2, 3:], -avg_normal_01)
         # return [distance_10, distance_c2, angle_diff_01, angle_diff_201]
+
+    @staticmethod
+    def exp_distance_range(dist, distance_range):
+        if dist < distance_range[0]:
+            return math.exp(-(dist - distance_range[0])) - 1.0
+        elif dist > distance_range[1]:
+            return math.exp(dist - distance_range[1]) - 1.0
+        else:
+            return 0.0

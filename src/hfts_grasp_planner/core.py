@@ -181,10 +181,6 @@ class HFTSSampler:
         length = 0.1
         # Draw planned contacts
         for i in range(object_contacts.shape[0]):
-            rospy.logwarn(str(object_contacts[i]))
-            normal_01 = (object_contacts[0, 3:] + object_contacts[1, :3]) / 2.0
-            normal_2 = object_contacts[2, 3:]
-            rospy.logwarn('Dot product: ' + str(np.dot(normal_01, normal_2)))
             self._or_handles.append(self._orEnv.drawarrow(object_contacts[i, :3],
                                                           object_contacts[i, :3] - length * object_contacts[i, 3:],
                                                           width, colors[i]))
@@ -358,8 +354,7 @@ class HFTSSampler:
                 if self.shc_evaluation(o_tmp, best_o):
                     contact_label = labels_tmp
                     best_o = o_tmp
-                    # TODO remove debug visualization again
-                    self._debug_visualize(labels_tmp)
+                    # self._debug_visualize(labels_tmp)
             # Descend to next level if we iterate at least once more
             if depth_limit > 0:
                 best_o, contact_label = self.extend_hfts_node(contact_label)

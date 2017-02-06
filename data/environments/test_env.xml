@@ -82,4 +82,22 @@
             </Geom>
         </Body>
     </KinBody>
+    <KinBody name="crayola">
+        <Translation>-0.16 0.78 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../crayola/objectModel.ply</Data>
+                <Render>../crayola/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="bunny">
+        <Translation>-0.16 0.78 1.5</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../bunny/objectModel.ply</Data>
+                <Render>../bunny/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
 </Environment>
