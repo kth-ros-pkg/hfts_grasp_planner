@@ -1,0 +1,7 @@
+# Request - Remove an object from the planning scene.
+# A unique identifier for the object
+string object_identifier
+---
+# Result
+# Bool that indicates whether the object was successfully removed
+bool success

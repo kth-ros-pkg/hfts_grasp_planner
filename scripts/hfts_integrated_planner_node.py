@@ -1,16 +1,17 @@
 #! /usr/bin/python
 
-import IPython
-import sys
 import rospy
 import rosgraph.roslogging
 import rospkg
 import logging
 import numpy
-from hfts_grasp_planner.srv import PlanGraspMotion, PlanGraspMotionRequest, PlanGraspMotionResponse
+import tf.transformations
+from hfts_grasp_planner.srv import *
 from hfts_grasp_planner.cfg import IntegratedHFTSPlannerConfig
 from hfts_grasp_planner.integrated_hfts_planner import IntegratedHFTSPlanner
 from sensor_msgs.msg import JointState
+from geometry_msgs.msg import Pose, PoseStamped
+from std_msgs.msg import Header
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from dynamic_reconfigure.server import Server
 
@@ -31,50 +32,32 @@ class HandlerClass(object):
         self._recent_joint_state = None
         self._params = {}
         # Update static parameters
-        self._joint_state_topic_name = rospy.get_param('joint_state_topic', '/robot/joint_states')
-        b_visualize_grasps = rospy.get_param('visualize_grasps', default=False)
-        b_visualize_system = rospy.get_param('visualize_system', default=False)
-        b_visualize_hfts = rospy.get_param('visualize_hfts', default=False)
-        b_show_traj = rospy.get_param('show_trajectory', default=False)
-        b_show_search_tree = rospy.get_param('show_search_tree', default=False)
-        env_file = self._package_path + '/' + rospy.get_param('environment_file_name')
-        hand_file = self._package_path + '/' + rospy.get_param('hand_file')
-        robot_name = rospy.get_param('robot_name')
-        manip_name = rospy.get_param('manipulator_name')
+        node_name = rospy.get_name()
+        self._joint_state_topic_name = rospy.get_param(node_name + '/joint_state_topic',
+                                                       default='/robot/joint_states')
+        b_visualize_grasps = rospy.get_param(node_name + '/visualize_grasps', default=False)
+        b_visualize_system = rospy.get_param(node_name + '/visualize_system', default=False)
+        b_visualize_hfts = rospy.get_param(node_name + '/visualize_hfts', default=False)
+        b_show_traj = rospy.get_param(node_name + '/show_trajectory', default=False)
+        b_show_search_tree = rospy.get_param(node_name + '/show_search_tree', default=False)
+        env_file = self._package_path + '/' + rospy.get_param(node_name + '/environment_file_name')
+        hand_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_file')
+        robot_name = rospy.get_param(node_name + '/robot_name')
+        manip_name = rospy.get_param(node_name + '/manipulator_name')
         # TODO remove this again and set these parameters only in the service callback
         # Load dynamic parameters also from the parameter server
-        self._params['min_iterations'] = rospy.get_param('min_iterations', default=20)
-        self._params['max_iterations'] = rospy.get_param('max_iterations', default=70)
-        self._params['free_space_weight'] = rospy.get_param('free_space_weight', default=0.5)
-        self._params['connected_space_weight'] = rospy.get_param('connected_space_weight', default=4.0)
-        self._params['use_approximates'] = rospy.get_param('use_approximates', default=True)
-        self._params['compute_velocities'] = rospy.get_param('compute_velocities', default=True)
-        self._params['time_limit'] = rospy.get_param('time_limit', default=60.0)
-        self._params['num_hfts_sampling_steps'] = rospy.get_param('num_hfts_sampling_steps', default=-1)
-        self._params['com_center_weight'] = rospy.get_param('com_center_weight', default=0.1)
-        self._params['position_reachability_weight'] = rospy.get_param('position_reachability_weight', default=1.0)
-        self._params['normal_reachability_weight'] = rospy.get_param('normal_reachability_weight', default=1.0)
-        self._params['reachability_weight'] = rospy.get_param('reachability_weight', default=1.0)
         # Make sure we do not visualize grasps and the system at the same time (only one OR viewer)
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
         # Create planner
         self._planner = IntegratedHFTSPlanner(env_file=env_file, robot_name=robot_name,
                                               manipulator_name=manip_name,
                                               data_root_path=self._package_path + '/data',
-                                              num_hfts_sampling_steps=self._params['num_hfts_sampling_steps'],
                                               b_visualize_system=b_visualize_system,
                                               b_visualize_grasps=b_visualize_grasps,
                                               b_visualize_hfts=b_visualize_hfts,
                                               b_show_traj=b_show_traj,
                                               b_show_search_tree=b_show_search_tree,
-                                              hand_file=hand_file,
-                                              min_iterations=self._params['min_iterations'],
-                                              max_iterations=self._params['max_iterations'],
-                                              free_space_weight=self._params['free_space_weight'],
-                                              connected_space_weight=self._params['connected_space_weight'],
-                                              use_approximates=self._params['use_approximates'],
-                                              compute_velocities=self._params['compute_velocities'],
-                                              time_limit=self._params['time_limit'])
+                                              hand_file=hand_file)
         # Listen to joint states
         rospy.Subscriber(self._joint_state_topic_name, JointState,
                          self.receive_joint_state)
@@ -89,6 +72,33 @@ class HandlerClass(object):
 
     def receive_joint_state(self, msg):
         self._recent_joint_state = msg
+
+    @staticmethod
+    def convert_pose(ros_pose=None, numpy_pose=None):
+        if ros_pose is not None:
+            if type(ros_pose) is PoseStamped:
+                # TODO we need to transform the pose first using tf
+                ros_pose = ros_pose.pose
+            transform_matrix = tf.transformations.quaternion_matrix([ros_pose.orientation.x,
+                                                                     ros_pose.orientation.y,
+                                                                     ros_pose.orientation.z,
+                                                                     ros_pose.orientation.w])
+            transform_matrix[:3, 3] = [ros_pose.position.x,
+                                       ros_pose.position.y,
+                                       ros_pose.position.z]
+            return transform_matrix
+        if numpy_pose is not None:
+            ros_pose = Pose()
+            ros_pose.position.x = numpy_pose[0, 3]
+            ros_pose.position.y = numpy_pose[1, 3]
+            ros_pose.position.z = numpy_pose[2, 3]
+            quaternion = tf.transformations.quaternion_from_matrix(numpy_pose)
+            ros_pose.orientation.x = quaternion[0]
+            ros_pose.orientation.y = quaternion[1]
+            ros_pose.orientation.z = quaternion[2]
+            ros_pose.orientation.w = quaternion[0]
+            return ros_pose
+        return None
 
     def convert_configuration(self, configuration):
         output_config = None
@@ -130,6 +140,17 @@ class HandlerClass(object):
             ros_trajectory.points.append(ros_traj_point)
         return ros_trajectory
 
+    def get_start_configuration(self, ros_start_configuration):
+        # Get the start configuration
+        if len(ros_start_configuration.position) == 0:
+            # no start configuration given, get it from robot state
+            ros_start_configuration = self._recent_joint_state
+        if ros_start_configuration is None or len(ros_start_configuration.position) == 0:
+            rospy.logerr('Start configuration unknown. There is neither a configuration given in the service request ' +
+                         'nor was any joint state received from ' + self._joint_state_topic_name)
+            return None
+        return self.convert_configuration(ros_start_configuration)
+
     def handle_plan_request(self, request):
         # TODO: update planner parameters
         rospy.loginfo('Executing planner with parameters: ' + str(self._params))
@@ -152,6 +173,7 @@ class HandlerClass(object):
                                      max_iterations=self._params['max_iterations'],
                                      free_space_weight=self._params['free_space_weight'],
                                      connected_space_weight=self._params['connected_space_weight'],
+                                     max_num_hierarchy_descends=self._params['max_num_hierarchy_descends'],
                                      use_approximates=self._params['use_approximates'])
         response = PlanGraspMotionResponse()
         obj_id = request.object_identifier
@@ -159,21 +181,15 @@ class HandlerClass(object):
         if len(model_id) == 0:
             model_id = None
         # Prepare the planner to work with the target object
-        self._planner.load_object(obj_id=obj_id,
-                                  model_id=model_id)
-        # Get the start configuration
-        ros_start_configuration = request.start_configuration
-        if len(ros_start_configuration.position) == 0:
-            # no start configuration given, get it from robot state
-            ros_start_configuration = self._recent_joint_state
-        if ros_start_configuration is None or len(ros_start_configuration.position) == 0:
-            rospy.logerr('Start configuration unknown. There is neither a configuration given in the service request ' +
-                         'nor was any joint state received from ' + self._joint_state_topic_name)
+        self._planner.load_target_object(obj_id=obj_id,
+                                         model_id=model_id)
+        # Get start config
+        start_config = self.get_start_configuration(request.start_configuration)
+        if start_config is None:
             response.planning_success = False
             return response
-        start_config = self.convert_configuration(ros_start_configuration)
         # PLAN
-        result = self._planner.plan(start_config)
+        result, grasp_pose = self._planner.plan(start_config)
         # Process result
         if result is None:
             response.planning_success = False
@@ -181,6 +197,35 @@ class HandlerClass(object):
         ros_trajectory = self.convert_trajectory(result)
         response.trajectory = ros_trajectory
         response.planning_success = True
+        response.grasp_pose.pose = self.convert_pose(numpy_pose=grasp_pose)
+        response.grasp_pose.header = Header(stamp=rospy.Time.now(),
+                                            frame_id=request.object_identifier)
+        return response
+
+    def handle_move_arm_request(self, request):
+        response = PlanArmMotionResponse(planning_success=False)
+        target_pose = self.convert_pose(ros_pose=request.target_pose)
+        start_configuration = self.get_start_configuration(request.start_configuration)
+        if start_configuration is None:
+            response.planning_success = False
+            return response
+        traj = self._planner.plan_arm_motion(target_pose, start_configuration)
+        if traj is not None:
+            response.trajectory = self.convert_trajectory(traj)
+            response.planning_success = True
+        return response
+
+    def handle_add_object_request(self, request):
+        response = AddObjectResponse(success=False)
+        # TODO we need to transform this pose to world frame using TF
+        response.success = self._planner.add_planning_scene_object(object_name=request.object_identifier,
+                                                                   object_class_name=request.class_identifier,
+                                                                   pose=transform_matrix)
+        return response
+
+    def handle_remove_object_request(self, request):
+        response = RemoveObjectResponse()
+        response.success = self._planner.remove_planning_scene_object(object_name=request.object_identifier)
         return response
 
 if __name__ == "__main__":
@@ -192,11 +237,15 @@ if __name__ == "__main__":
     # Build handler
     handler = HandlerClass()
     srv = Server(IntegratedHFTSPlannerConfig, handler.update_parameters)
-    s = rospy.Service('/hfts_planner/plan_fingertip_grasp_motion', PlanGraspMotion, handler.handle_plan_request)
+    # Create services
+    add_obj_service = rospy.Service(rospy.get_name() + '/add_object',
+                                    AddObject, handler.handle_add_object_request)
+    remove_obj_service = rospy.Service(rospy.get_name() + '/remove_object',
+                                       RemoveObject, handler.handle_remove_object_request)
+    planning_service = rospy.Service(rospy.get_name() + '/plan_fingertip_grasp_motion',
+                                     PlanGraspMotion, handler.handle_plan_request)
+    arm_planning_service = rospy.Service(rospy.get_name() + '/plan_arm_motion',
+                                         PlanArmMotion, handler.handle_move_arm_request)
+    # Spin until node is killed
     rospy.spin()
-    # class DummyRequest:
-    #     object_identifier = 'crayola'
-    # request = DummyRequest()
-    # handler.handle_plan_request(request)
-    # print 'Execution finished'
     sys.exit(0)

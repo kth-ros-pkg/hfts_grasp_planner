@@ -24,3 +24,5 @@ geometry_msgs/PoseStamped object_pose
 bool planning_success
 # A hand-arm trajectory that moves the end-effector into a grasping configuration.
 trajectory_msgs/JointTrajectory trajectory
+# The end-effector pose w.r.t the object frame.
+geometry_msgs/PoseStamped grasp_pose

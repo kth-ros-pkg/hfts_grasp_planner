@@ -25,19 +25,13 @@ class HandlerClass(object):
         package_path = rospack.get_path(PACKAGE_NAME)
         self._params = {}
         # Update static parameters
-        b_visualize = rospy.get_param('visualize', default=False)
+        b_visualize = rospy.get_param(rospy.get_name() + '/visualize', default=False)
         # Update dynamic parameters
-        self._params['num_hfts_iterations'] = rospy.get_param('num_hfts_iterations', default=40)
-        self._params['num_planning_attempts'] = rospy.get_param('num_planning_attempts', default=10)
-        self._params['com_center_weight'] = rospy.get_param('com_center_weight', default=10.0)
-        self._params['position_reachability_weight'] = rospy.get_param('position_reachability_weight', default=10.0)
-        self._params['normal_reachability_weight'] = rospy.get_param('normal_reachability_weight', default=10.0)
-        self._params['reachability_weight'] = rospy.get_param('reachability_weight', default=10.0)
         # Create planner
-        object_loader = ObjectFileIO(package_path + '/data/')
-        self._planner = HFTSSampler(object_loader, num_hops=4, vis=b_visualize)
+        self._object_loader = ObjectFileIO(package_path + '/data/')
+        self._planner = HFTSSampler(self._object_loader, num_hops=4, vis=b_visualize)
         # Load hand and save joint names
-        hand_file = package_path + rospy.get_param('handFile')
+        hand_file = package_path + rospy.get_param(rospy.get_name() + '/handFile')
         self._planner.load_hand(hand_file)
         or_hand = self._planner.get_or_hand()
         joints = or_hand.GetJoints()
@@ -51,6 +45,8 @@ class HandlerClass(object):
         # pointCloud = req.point_cloud
         rospy.loginfo('Executing planner with parameters: ' + str(self._params))
         # Load the requested object first
+        # TODO setting this boolean parameter should be solver in a more elegant manner
+        self._object_loader._b_var_filter = self._params['hfts_filter_points']
         self._planner.load_object(req.object_identifier)
         hfts_gen_params = {'max_normal_variance': self._params['max_normal_variance'],
                            'min_contact_patch_radius': self._params['min_contact_patch_radius'],

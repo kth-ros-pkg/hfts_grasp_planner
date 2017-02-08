@@ -191,6 +191,8 @@ class HFTSGenerator:
         return estimator.labels_
 
     def _compute_hfts(self, curr_points, level=0):
+        # TODO This implementation suffers from very unbalanced point clouds.
+        # TODO The hierarchy's depth is governed by the number of points in the smallest cluster.
         if level >= self._level_n:
             return
         idx = curr_points[:, 0].astype(int)
@@ -258,15 +260,16 @@ def filter_points(points, parameters):
     rospy.loginfo('Filtering points for constructing HFTS')
     vld_idx = np.ones(points.shape[0], dtype=bool)
     i = 0
+    radius = extract_hfts_gen_parameter(parameters, 'min_contact_patch_radius')
+    max_variance = extract_hfts_gen_parameter(parameters, 'max_normal_variance')
     for p in points:
         # nb_idx = kdt.query([p[:3]], k=20, return_distance=False)[0]
-        radius = extract_hfts_gen_parameter(parameters, 'min_contact_patch_radius')
         nb_idx = kdt.query_radius(p[:3], r=radius)[0]
         if len(nb_idx) == 0:
             continue
         nb_points_normals = points[nb_idx, 3:]
         var = np.var(nb_points_normals, axis=0)
-        if max(var) > extract_hfts_gen_parameter(parameters, 'max_normal_variance'):
+        if max(var) > max_variance:
             vld_idx[i] = False
         i += 1
     points = points[vld_idx, :]
@@ -301,7 +304,14 @@ def read_stl_file(file_id):
     for face_idx in range(len(stl_mesh.points)):
         # For this, we select the center of each face
         points[face_idx, 0:3] = (stl_mesh.v0[face_idx] + stl_mesh.v1[face_idx] + stl_mesh.v2[face_idx]) / 3.0
-        points[face_idx, 3:6] = stl_mesh.normals[face_idx] / np.linalg.norm(stl_mesh.normals[face_idx])
+        normal_length = np.linalg.norm(stl_mesh.normals[face_idx])
+        if normal_length == 0.0:
+            stl_mesh.update_normals()
+            normal_length = np.linalg.norm(stl_mesh.normals[face_idx])
+            if normal_length == 0.0:
+                raise IOError('[utils.py::read_stl_file] Could not extract valid normals from the given file ' \
+                              + str(file_id))
+        points[face_idx, 3:6] = stl_mesh.normals[face_idx] / normal_length
     return points
 
 

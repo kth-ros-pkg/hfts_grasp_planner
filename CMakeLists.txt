@@ -60,6 +60,9 @@ add_service_files(
   FILES
   PlanGrasp.srv
   PlanGraspMotion.srv
+  AddObject.srv
+  RemoveObject.srv
+  PlanArmMotion.srv
 )
 
 ## Generate actions in the 'action' folder

@@ -6,16 +6,17 @@ import numpy
 from orsampler import RobotCSpaceSampler, GraspApproachConstraintsManager
 from sampler import FreeSpaceProximitySampler
 from rrt import DynamicPGoalProvider, RRT
-from utils import OpenRAVEDrawer
+from utils import OpenRAVEDrawer, ObjectFileIO
 from grasp_goal_sampler import GraspGoalSampler
 from core import PlanningSceneInterface
 from hierarchy_visualization import FreeSpaceProximitySamplerVisualizer
+
 
 class IntegratedHFTSPlanner(object):
     """ Implements a simple to use interface to the integrated HFTS planner. """
 
     def __init__(self, env_file, hand_file, robot_name, manipulator_name,
-                 data_root_path, dof_weights=None, num_hfts_sampling_steps=4,
+                 data_root_path, dof_weights=None, max_num_hierarchy_descends=4,
                  min_iterations=20, max_iterations=70, p_goal_tree=0.8,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
                  b_show_traj=False, b_show_search_tree=False, free_space_weight=0.1, connected_space_weight=4.0,
@@ -29,7 +30,7 @@ class IntegratedHFTSPlanner(object):
          @param manipulator_name String containing the name of the robot's manipulator to use
          @param dof_weights (optional) List of floats, containing a weight for each DOF. These weights are used in
             the distance function on C-Space.
-         @param num_hfts_sampling_steps Number of sampling steps for sampling the HFTS.
+         @param max_num_hierarchy_descends Number of sampling steps for sampling the HFTS.
             (should be greater than HFTS depth)
          @param min_iterations Minimum number of iterations for an optimization step on each HFTS layer
          @param max_iterations Maximum number of iterations for an optimization step on each HFTS layer
@@ -58,21 +59,24 @@ class IntegratedHFTSPlanner(object):
             raise ValueError('The provided environment does not contain a robot!')
         self._robot = self._env.GetRobot(robot_name)
         self._robot.SetActiveManipulator(manipulator_name)
+        self._or_motion_planner = orpy.interfaces.BaseManipulation(self._robot)
         if dof_weights is None:
             dof_weights = self._robot.GetDOF() * [1.0]
         self._cSampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=dof_weights)
         # TODO read these robot-specific specs from a file
         planning_scene_interface = PlanningSceneInterface(self._env, self._robot.GetName())
-        self._grasp_planner = GraspGoalSampler(data_path=data_root_path,
+        self._object_io_interface = ObjectFileIO(data_path=data_root_path)
+        self._grasp_planner = GraspGoalSampler(object_io_interface=self._object_io_interface,
                                                hand_path=hand_file,
                                                planning_scene_interface=planning_scene_interface,
                                                visualize=b_visualize_grasps)
         hierarchy_visualizer = None
         if b_visualize_hfts:
             hierarchy_visualizer = FreeSpaceProximitySamplerVisualizer(self._robot)
-        if num_hfts_sampling_steps <= 0:
-            num_hfts_sampling_steps = self._grasp_planner.get_max_depth() + 1
-        self._hierarchy_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler, k=num_hfts_sampling_steps,
+        if max_num_hierarchy_descends <= 0:
+            max_num_hierarchy_descends = self._grasp_planner.get_max_depth() + 1
+        self._hierarchy_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler,
+                                                            k=max_num_hierarchy_descends,
                                                             num_iterations=max_iterations, min_num_iterations=min_iterations,
                                                             b_return_approximates=use_approximates,
                                                             connected_weight=connected_space_weight,
@@ -89,10 +93,12 @@ class IntegratedHFTSPlanner(object):
                                 pgoal_tree=p_goal_tree, constraints_manager=self._constraints_manager)
         self._time_limit = time_limit
         self._last_path = None
+        self._last_obj = None
         self._compute_velocities = compute_velocities
         self._b_show_trajectory = b_show_traj
 
-    def load_object(self, obj_id, model_id=None):
+    def load_target_object(self, obj_id, model_id=None):
+        self._last_obj = obj_id
         self._constraints_manager.set_object_name(obj_id)
         self._grasp_planner.set_object(obj_id=obj_id, model_id=model_id)
 
@@ -130,6 +136,16 @@ class IntegratedHFTSPlanner(object):
         self._robot.SetDOFVelocityLimits(vel_limits)
         return traj
 
+    def plan_arm_motion(self, target_pose, start_configuration):
+        self._robot.SetDOFValues(start_configuration)
+        try:
+            traj = self._or_motion_planner.MoveToHandPosition(matrices=[target_pose], outputtraj=True,
+                                                              outputtrajobj=True)
+        except orpy.planning_error as pe:
+            logging.info('[IntegratedHFTSPlanner::plan_arm_motion] Planning arm motion to pose failed.')
+            traj = None
+        return traj
+
     def plan(self, start_configuration):
         if self._debug_tree_drawer is not None:
             self._debug_tree_drawer.clear()
@@ -139,6 +155,13 @@ class IntegratedHFTSPlanner(object):
                 pass
         self._last_path = self._rrt_planner.proximity_birrt(start_configuration, time_limit=self._time_limit,
                                                             debug_function=debug_function)
+        grasp_pose = None
+        if self._last_path is not None:
+            last_config = self._last_path[-1].get_configuration()
+            self._robot.SetDOFValues(last_config)
+            grasp_pose = self._robot.GetActiveManipulator().GetEndEffectorTransform()
+            object_pose = self._env.GetKinBody(self._last_obj).GetTransform()
+            grasp_pose = numpy.dot(numpy.linalg.inv(object_pose), grasp_pose)
         if self._compute_velocities:
             self._last_traj = self.create_or_trajectory(self._last_path)
             if self._b_show_trajectory and self._last_traj is not None:
@@ -146,8 +169,28 @@ class IntegratedHFTSPlanner(object):
                 controller.SetPath(self._last_traj)
                 self._robot.WaitForController(self._last_traj.GetDuration())
                 controller.Reset()
-            return self._last_traj
-        return self._last_path
+            return self._last_traj, grasp_pose
+        return self._last_path, grasp_pose
+
+    def add_planning_scene_object(self, object_name, object_class_name, pose):
+        body = self._env.GetKinBody(object_name)
+        if body is None:
+            or_file_name = self._object_io_interface.get_openrave_file_name(object_class_name)
+            body_loaded = self._env.Load(or_file_name)
+            if not body_loaded:
+                logging.error('Failed to load object from file ' + str(or_file_name))
+                return False
+            body = self._env.GetBodies()[-1]  # last body is most recently added
+            body.SetName(object_name)
+        body.SetTransform(pose)
+        return True
+
+    def remove_planning_scene_object(self, object_name):
+        body = self._env.GetKinBody(object_name)
+        if body is not None:
+            self._env.Remove(body)
+            return True
+        return False
 
     def set_parameters(self, min_iterations=None, max_iterations=None,
                        free_space_weight=None, connected_space_weight=None,
@@ -156,7 +199,7 @@ class IntegratedHFTSPlanner(object):
                        pos_reach_weight=None, f01_parallelism_weight=None,
                        grasp_symmetry_weight=None, grasp_flatness_weight=None,
                        reachability_weight=None, hfts_generation_params=None,
-                       b_force_new_hfts=None):
+                       max_num_hierarchy_descends=None, b_force_new_hfts=None):
         # TODO some of these parameters are robot hand specific
         if time_limit is not None:
             self._time_limit = time_limit
@@ -170,10 +213,13 @@ class IntegratedHFTSPlanner(object):
                                            reachability_weight=reachability_weight,
                                            b_force_new_hfts=b_force_new_hfts,
                                            hfts_generation_params=hfts_generation_params)
+        if max_num_hierarchy_descends == 0:
+            max_num_hierarchy_descends = self._grasp_planner.get_max_depth() + 1
         self._hierarchy_sampler.set_parameters(min_iterations=min_iterations,
                                                max_iterations=max_iterations,
                                                free_space_weight=free_space_weight,
                                                connected_space_weight=connected_space_weight,
+                                               k=max_num_hierarchy_descends,
                                                use_approximates=use_approximates)
         # TODO implement the rest
 

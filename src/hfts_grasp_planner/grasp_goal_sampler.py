@@ -21,10 +21,10 @@ class GraspGoalSampler:
     """ Wrapper class for the HFTS Grasp Planner/Sampler that allows a full black box usage."""
 
     # TODO data_path is specific to reading objects from a filesystem. Better probably to pass ObjectIO
-    def __init__(self, data_path, hand_path, planning_scene_interface,
+    def __init__(self, object_io_interface, hand_path, planning_scene_interface,
                  visualize=False, open_hand_offset=0.1):
         """ Creates a new wrapper.
-            @param data_path Path to where all object data is stored.
+            @param object_io_interface IOObject Object that handles IO requests
             @param hand_path Path to where the hand data is stored.
             @param planning_scene_interface OpenRAVE environment with some additional information
                                             containing the robot and its surroundings.
@@ -34,7 +34,6 @@ class GraspGoalSampler:
             hence a grasping configuration is always in collision. To enable motion planning to such a
             configuration we open the hand by some constant offset.
             """
-        object_io_interface = ObjectFileIO(data_path)
         self.grasp_planner = HFTSSampler(object_io_interface=object_io_interface,
                                          vis=visualize, scene_interface=planning_scene_interface)
         self.grasp_planner.set_max_iter(100)
