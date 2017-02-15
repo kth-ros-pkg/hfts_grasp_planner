@@ -59,6 +59,9 @@ class IntegratedHFTSPlanner(object):
             raise ValueError('The provided environment does not contain a robot!')
         self._robot = self._env.GetRobot(robot_name)
         self._robot.SetActiveManipulator(manipulator_name)
+        # TODO this is a hack to fix a super weird behaviour regarding the
+        # TODO the transformation of the kmr_robotiq robot. this should NOT be necessary
+        self._robot_transformation_hack = self._robot.GetTransform()
         self._or_motion_planner = orpy.interfaces.BaseManipulation(self._robot)
         if dof_weights is None:
             dof_weights = self._robot.GetDOF() * [1.0]
@@ -182,15 +185,25 @@ class IntegratedHFTSPlanner(object):
                 return False
             body = self._env.GetBodies()[-1]  # last body is most recently added
             body.SetName(object_name)
+        if body == self._robot:
+            pose = numpy.dot(pose, self._robot_transformation_hack)
         body.SetTransform(pose)
         return True
 
     def remove_planning_scene_object(self, object_name):
-        body = self._env.GetKinBody(object_name)
-        if body is not None:
-            self._env.Remove(body)
+        if object_name == 'all':
+            robot = self._env.GetRobots()[0]
+            kinbodies = self._env.GetBodies()
+            for body in kinbodies:
+                if body != robot:
+                    self._env.Remove(body)
             return True
-        return False
+        else:
+            body = self._env.GetKinBody(object_name)
+            if body is not None:
+                self._env.Remove(body)
+                return True
+            return False
 
     def set_parameters(self, min_iterations=None, max_iterations=None,
                        free_space_weight=None, connected_space_weight=None,

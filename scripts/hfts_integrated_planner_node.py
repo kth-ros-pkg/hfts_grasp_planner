@@ -143,25 +143,36 @@ class HandlerClass(object):
                 output_config.name = self._fix_joint_names(output_config.name, 'ros')
         return output_config
 
-    def convert_trajectory(self, traj):
+    def convert_trajectory(self, traj, arm_only=False):
         # The configuration specification allows us to interpret the trajectory data
         specs = traj.GetConfigurationSpecification()
         ros_trajectory = JointTrajectory()
         robot = self._planner.get_robot()
         manip = robot.GetActiveManipulator()
-        indices = numpy.concatenate((manip.GetArmIndices(), manip.GetGripperIndices()))
-        ros_trajectory.joint_names = map(lambda x: x.GetName(), robot.GetJoints())
+        if arm_only:
+            dof_indices = manip.GetArmIndices()
+        else:
+            dof_indices = numpy.concatenate((manip.GetArmIndices(), manip.GetGripperIndices()))
+        joint_names = map(lambda x: x.GetName(), robot.GetJoints())
+        ros_trajectory.joint_names = [joint_names[i] for i in dof_indices]
         ros_trajectory.joint_names = self._fix_joint_names(ros_trajectory.joint_names, 'ros')
         time_from_start = 0.0
         # Iterate over all waypoints
         for i in range(traj.GetNumWaypoints()):
             wp = traj.GetWaypoint(i)
             ros_traj_point = JointTrajectoryPoint()
-            ros_traj_point.positions = specs.ExtractJointValues(wp, robot, range(robot.GetDOF()))
-            ros_traj_point.velocities = specs.ExtractJointValues(wp, robot, range(robot.GetDOF()), 1)
-            time_from_start += specs.ExtractDeltaTime(wp)
-            ros_traj_point.time_from_start = rospy.Duration(time_from_start)
+            ros_traj_point.positions = specs.ExtractJointValues(wp, robot, range(len(dof_indices)))
+            ros_traj_point.velocities = specs.ExtractJointValues(wp, robot, range(len(dof_indices)), 1)
+            delta_t = specs.ExtractDeltaTime(wp)
+            # TODO why does this happen?
+            if delta_t <= 10e-8 and i > 0:
+                rospy.logwarn('We have redundant waypoints in this trajectory, skipping...')
+                continue
+            time_from_start += delta_t
+            rospy.loginfo('Delta t is : %f' % delta_t)
+            ros_traj_point.time_from_start = rospy.Duration().from_sec(time_from_start)
             ros_trajectory.points.append(ros_traj_point)
+
         return ros_trajectory
 
     def _fix_joint_names(self, joint_names, target_name):
@@ -257,13 +268,14 @@ class HandlerClass(object):
             return response
         traj = self._planner.plan_arm_motion(target_pose, start_configuration)
         if traj is not None:
-            response.trajectory = self.convert_trajectory(traj)
+            response.trajectory = self.convert_trajectory(traj, arm_only=True)
             response.planning_success = True
         return response
 
     def handle_add_object_request(self, request):
         response = AddObjectResponse(success=False)
         # TODO we need to transform this pose to world frame using TF
+        transform_matrix = self.convert_pose(ros_pose=request.pose)
         response.success = self._planner.add_planning_scene_object(object_name=request.object_identifier,
                                                                    object_class_name=request.class_identifier,
                                                                    pose=transform_matrix)

@@ -1,5 +1,5 @@
 # Request - Remove an object from the planning scene.
-# A unique identifier for the object
+# A unique identifier for the object, or 'all' to remove all objects (except for the robot) from the scene
 string object_identifier
 ---
 # Result
