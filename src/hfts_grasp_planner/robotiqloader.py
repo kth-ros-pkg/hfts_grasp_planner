@@ -4,7 +4,7 @@ import math
 from utils import vec_angel_diff, dist_in_range
 
 # TODO this should be specified in a configuration file
-LAST_FINGER_JOINT = 'JF20'
+LAST_FINGER_JOINT = 'finger_2_joint_1'
 
 # TODO this should be defined in a super module
 class InvalidTriangleException(Exception):

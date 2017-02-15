@@ -17,3 +17,12 @@ connected_space_weight: 4.0
 num_hfts_samplings_steps: -1
 use_approximates: True
 time_limit: 6000
+joint_state_topic: /kmr/hand_arm_joint_states
+joint_names_mapping:
+  iiwa.joint0: lbrAxis1
+  iiwa.joint1: lbrAxis2
+  iiwa.joint2: lbrAxis3
+  iiwa.joint3: lbrAxis4
+  iiwa.joint4: lbrAxis5
+  iiwa.joint5: lbrAxis6
+  iiwa.joint6: lbrAxis7

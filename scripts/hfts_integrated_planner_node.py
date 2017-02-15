@@ -23,6 +23,8 @@ class HandlerClass(object):
     """ Class that provides a ROS service callback for executing the
         integrated HFTS grasp planner."""
 
+    JOINT_VALUE_NOISE = 0.001
+
     def __init__(self):
         """ Creates a new handler class."""
         # Get some system information
@@ -35,6 +37,10 @@ class HandlerClass(object):
         node_name = rospy.get_name()
         self._joint_state_topic_name = rospy.get_param(node_name + '/joint_state_topic',
                                                        default='/robot/joint_states')
+        self._joint_names_mapping = rospy.get_param(node_name + '/joint_names_mapping', default=None)
+        self._inverted_joint_names_mapping = self._invert_joint_names_mapping(self._joint_names_mapping)
+        assert (self._joint_names_mapping is None and self._inverted_joint_names_mapping is None) \
+            or (self._joint_names_mapping is not None and self._inverted_joint_names_mapping is not None)
         b_visualize_grasps = rospy.get_param(node_name + '/visualize_grasps', default=False)
         b_visualize_system = rospy.get_param(node_name + '/visualize_system', default=False)
         b_visualize_hfts = rospy.get_param(node_name + '/visualize_hfts', default=False)
@@ -44,7 +50,6 @@ class HandlerClass(object):
         hand_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_file')
         robot_name = rospy.get_param(node_name + '/robot_name')
         manip_name = rospy.get_param(node_name + '/manipulator_name')
-        # TODO remove this again and set these parameters only in the service callback
         # Load dynamic parameters also from the parameter server
         # Make sure we do not visualize grasps and the system at the same time (only one OR viewer)
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
@@ -62,6 +67,14 @@ class HandlerClass(object):
         rospy.Subscriber(self._joint_state_topic_name, JointState,
                          self.receive_joint_state)
 
+    def _invert_joint_names_mapping(self, input_mapping):
+        if input_mapping is None:
+            return None
+        inverted_mapping = {}
+        for key, value in self._joint_names_mapping.iteritems():
+            inverted_mapping[value] = key
+        return inverted_mapping
+
     def update_parameters(self, config, level):
         # self._params['p_goal_max'] = rospy.get_param('p_goal_max', default=0.8)
         # self._params['p_goal_w'] = rospy.get_param('p_goal_w', default=1.2)
@@ -72,6 +85,14 @@ class HandlerClass(object):
 
     def receive_joint_state(self, msg):
         self._recent_joint_state = msg
+
+    def clamp_joint_value(self, value, joint):
+        min_value, max_value = joint.GetLimits()
+        if value < min_value - self.JOINT_VALUE_NOISE:
+            rospy.logerr('The joint value of joint %s is too small.' % joint.GetName())
+        elif value > max_value + self.JOINT_VALUE_NOISE:
+            rospy.logerr('The joint value of joint %s is too large.' % joint.GetName())
+        return min(max(value, min_value + self.JOINT_VALUE_NOISE), max_value - self.JOINT_VALUE_NOISE)
 
     @staticmethod
     def convert_pose(ros_pose=None, numpy_pose=None):
@@ -104,20 +125,22 @@ class HandlerClass(object):
         output_config = None
         or_robot = self._planner.get_robot()
         if type(configuration) is JointState:
+            configuration.name = self._fix_joint_names(configuration.name, 'openrave')
             # Convert from Joint state to OpenRAVE (list-type)
             name_position_mapping = {}
             output_config = numpy.zeros(or_robot.GetDOF())
             for i in range(len(configuration.name)):
                 name_position_mapping[configuration.name[i]] = configuration.position[i]
             for joint in or_robot.GetJoints():
-                output_config[joint.GetDOFIndex()] = name_position_mapping[joint.GetName()]
+                output_config[joint.GetDOFIndex()] = self.clamp_joint_value(name_position_mapping[joint.GetName()], joint)
         elif type(configuration) is list or type(configuration) is numpy.array:
             # Convert from OpenRAVE (list-type) to Joint state
-            output_config = JointState
+            output_config = JointState()
             for i in range(len(configuration)):
                 joint = or_robot.GetJointFromDOFIndex(i)
                 output_config.name.append(joint.GetName())
                 output_config.position.append(configuration[i])
+                output_config.name = self._fix_joint_names(output_config.name, 'ros')
         return output_config
 
     def convert_trajectory(self, traj):
@@ -128,6 +151,7 @@ class HandlerClass(object):
         manip = robot.GetActiveManipulator()
         indices = numpy.concatenate((manip.GetArmIndices(), manip.GetGripperIndices()))
         ros_trajectory.joint_names = map(lambda x: x.GetName(), robot.GetJoints())
+        ros_trajectory.joint_names = self._fix_joint_names(ros_trajectory.joint_names, 'ros')
         time_from_start = 0.0
         # Iterate over all waypoints
         for i in range(traj.GetNumWaypoints()):
@@ -139,6 +163,27 @@ class HandlerClass(object):
             ros_traj_point.time_from_start = rospy.Duration(time_from_start)
             ros_trajectory.points.append(ros_traj_point)
         return ros_trajectory
+
+    def _fix_joint_names(self, joint_names, target_name):
+        # We might have different joint names in the collada model and the ros environment
+        # we are working in. In this case the user can specify a mapping on the parameter server
+        # If such a mapping is defined, self._joint_names_mapping maps openrave names to ros names,
+        # and self._inverted_joint_names_mapping vice versa.
+        if self._joint_names_mapping is None:
+            return joint_names
+        if target_name == 'ros':
+            for name_idx in range(len(joint_names)):
+                or_name = joint_names[name_idx]
+                if or_name in self._joint_names_mapping:
+                    joint_names[name_idx] = self._joint_names_mapping[or_name]
+        elif target_name == 'openrave':
+            for name_idx in range(len(joint_names)):
+                ros_name = joint_names[name_idx]
+                if ros_name in self._inverted_joint_names_mapping:
+                    joint_names[name_idx] = self._inverted_joint_names_mapping[ros_name]
+        else:
+            raise ValueError('Unknown target %s for joint name mapping' % str(target_name))
+        return joint_names
 
     def get_start_configuration(self, ros_start_configuration):
         # Get the start configuration
@@ -188,6 +233,7 @@ class HandlerClass(object):
         if start_config is None:
             response.planning_success = False
             return response
+        rospy.loginfo('Planning from configuration ' + str(start_config))
         # PLAN
         result, grasp_pose = self._planner.plan(start_config)
         # Process result
