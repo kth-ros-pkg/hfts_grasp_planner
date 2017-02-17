@@ -78,8 +78,14 @@ class ObjectFileIO(ObjectIO):
         return None
 
     def get_openrave_file_name(self, obj_id):
-        # return self._data_path + '/' + obj_id + '/' + obj_id + '.kinbody.xml'
-        return self._data_path + '/' + obj_id + '/' + 'objectModel' + self.get_obj_file_extension(obj_id)
+        file_extension = self.get_obj_file_extension(obj_id)
+        if file_extension is not None:
+            return self._data_path + '/' + obj_id + '/' + 'objectModel' + file_extension
+        xml_file_name = self._data_path + '/' + obj_id + '/' + obj_id + '.kinbody.xml'
+        b_xml_file_exists = os.path.exists(xml_file_name)
+        if b_xml_file_exists:
+            return xml_file_name
+        return None
 
     def get_hfts(self, obj_id, force_new=False):
         # Check whether we have an HFTS for this object in memory

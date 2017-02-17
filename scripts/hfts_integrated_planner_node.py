@@ -94,12 +94,18 @@ class HandlerClass(object):
             rospy.logerr('The joint value of joint %s is too large.' % joint.GetName())
         return min(max(value, min_value + self.JOINT_VALUE_NOISE), max_value - self.JOINT_VALUE_NOISE)
 
-    @staticmethod
-    def convert_pose(ros_pose=None, numpy_pose=None):
+    def convert_pose(self, ros_pose=None, numpy_pose=None):
         if ros_pose is not None:
+            tf_matrix = numpy.eye(4)
             if type(ros_pose) is PoseStamped:
                 # TODO we need to transform the pose first using tf
+                if ros_pose.header.frame_id != 'world':
+                    tf_matrix = self._planner.get_object_frame(ros_pose.header.frame_id)
+                    if tf_matrix is None:
+                        rospy.logerr('Pose frame %s unknown.' % ros_pose.header.frame_id)
+                        return None
                 ros_pose = ros_pose.pose
+
             transform_matrix = tf.transformations.quaternion_matrix([ros_pose.orientation.x,
                                                                      ros_pose.orientation.y,
                                                                      ros_pose.orientation.z,
@@ -107,7 +113,7 @@ class HandlerClass(object):
             transform_matrix[:3, 3] = [ros_pose.position.x,
                                        ros_pose.position.y,
                                        ros_pose.position.z]
-            return transform_matrix
+            return numpy.dot(tf_matrix, transform_matrix)
         if numpy_pose is not None:
             ros_pose = Pose()
             ros_pose.position.x = numpy_pose[0, 3]
@@ -262,6 +268,8 @@ class HandlerClass(object):
     def handle_move_arm_request(self, request):
         response = PlanArmMotionResponse(planning_success=False)
         target_pose = self.convert_pose(ros_pose=request.target_pose)
+        if target_pose is None:
+            return response
         start_configuration = self.get_start_configuration(request.start_configuration)
         if start_configuration is None:
             response.planning_success = False

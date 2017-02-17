@@ -119,6 +119,7 @@ class HFTSSampler:
         # Check whether the hand is collision free
         if self._robot.CheckSelfCollision():
             return False
+        # TODO need to check stability of established contacts
         return self.is_grasp_collision_free()
 
     def clear_config_cache(self):
@@ -383,7 +384,7 @@ class HFTSSampler:
         #     stability = 0.0
 
         is_leaf = (len(contact_label[0]) == self._num_levels)
-        is_goal_sample = (sample_q == 0) and is_leaf
+        is_goal_sample = (sample_q == 0) # and is_leaf
         if not is_goal_sample and grasp_conf is not None:
             rospy.logdebug('[HFTSSampler::sample_grasp] Approximate has final quality: %i' % sample_q)
             b_approximate_feasible = self._robot.avoid_collision_at_fingers(n_step=20)
@@ -448,6 +449,7 @@ class HFTSSampler:
 
     def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False):
         # TODO this method as it is right now is only useful for the Robotiq hand.
+        self.draw_contacts(object_contacts)
         self._robot.SetDOFValues(grasp_conf)
         try:
             T = self._robot.hand_obj_transform(hand_contacts[:3, :3], object_contacts[:, :3])
@@ -457,7 +459,6 @@ class HFTSSampler:
             return False
         self._robot.comply_fingertips()
         if self.check_grasp_validity():
-            self.draw_contacts(object_contacts)
             return True
         self.swap_contacts([0, 1], object_contacts)
         self._robot.SetDOFValues(grasp_conf)

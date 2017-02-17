@@ -108,6 +108,12 @@ class IntegratedHFTSPlanner(object):
     def get_robot(self):
         return self._robot
 
+    def get_object_frame(self, frame_id):
+        body = self._env.GetKinBody(frame_id)
+        if body is None:
+            return None
+        return body.GetTransform()
+
     def create_or_trajectory(self, path, vel_factor=0.2):
         if path is None:
             return None
@@ -176,6 +182,9 @@ class IntegratedHFTSPlanner(object):
         return self._last_path, grasp_pose
 
     def add_planning_scene_object(self, object_name, object_class_name, pose):
+        # TODO this is a hack, remove this again:
+        if object_name == 'ground_plane':
+            return True
         body = self._env.GetKinBody(object_name)
         if body is None:
             or_file_name = self._object_io_interface.get_openrave_file_name(object_class_name)

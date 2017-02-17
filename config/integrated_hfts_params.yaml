@@ -1,7 +1,7 @@
 visualize_grasps: False
 visualize_system: True
-visualize_hfts: True
-show_trajectory: True
+visualize_hfts: False
+show_trajectory: False
 show_search_tree: True
 p_goal_max: 0.8
 p_goal_w: 1.2
@@ -16,7 +16,7 @@ free_space_weight: 0.5
 connected_space_weight: 4.0
 num_hfts_samplings_steps: -1
 use_approximates: True
-time_limit: 6000
+time_limit: 60
 joint_state_topic: /kmr/hand_arm_joint_states
 joint_names_mapping:
   iiwa.joint0: lbrAxis1

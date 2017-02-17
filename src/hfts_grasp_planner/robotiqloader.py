@@ -139,12 +139,13 @@ class RobotiqHand:
         :return:
         """
         joint_index = self.GetJoint(LAST_FINGER_JOINT).GetDOFIndex()
-        closed_conf = self.GetDOFValues()
+        limit_value = self.GetDOFLimits()[1][joint_index]
         n_step /= 2
         self.avoid_collision_at_fingers(n_step)
         curr_conf = self.GetDOFValues()
+        step = (limit_value - curr_conf[joint_index]) / n_step
         for i in range(n_step):
-            curr_conf[joint_index] += i * (closed_conf[joint_index] - curr_conf[joint_index] / n_step)
+            curr_conf[joint_index] += step
             self.SetDOFValues(curr_conf)
             if self.are_fingertips_in_contact():
                 break
