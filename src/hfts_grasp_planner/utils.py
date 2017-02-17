@@ -14,6 +14,8 @@ from sklearn.neighbors import KDTree
 from stl import mesh as stl_mesh_module
 from abc import ABCMeta, abstractmethod
 import openravepy as orpy
+import hfts_grasp_planner.external.transformations as transformations
+from scipy.spatial import ConvexHull
 
 DEFAULT_HFTS_GENERATION_PARAMS = {'max_normal_variance': 0.2,
                                   'min_contact_patch_radius': 0.015,
@@ -352,6 +354,69 @@ def dist_in_range(d, r):
         return d - r[1]
     else:
         return 0.0
+
+
+def generate_wrench_cone(contact, normal, mu, center, face_n):
+    ref_vec = np.array([0, 0, 1])
+    center = np.array(center)
+    contact = np.array(contact)
+    normal = np.array(normal)
+    forces = []
+    angle_step = float(2 * math.pi) / face_n
+
+    # create face_n cone edges
+    for i in range(face_n):
+        angle = angle_step * i
+        x = mu * math.cos(angle)
+        y = mu * math.sin(angle)
+        z = 1
+        forces.append([x, y, z])
+
+    forces = np.asarray(forces)
+    rot_angle = transformations.angle_between_vectors(ref_vec, normal)
+    axis = np.cross(ref_vec, normal)
+    # take care of axis aligned normals
+    if np.linalg.norm(axis) > 0.01:
+        r_mat = transformations.rotation_matrix(rot_angle, axis)[:3, :3]
+    else:
+        if np.dot(ref_vec, normal) > 0:
+            r_mat = np.identity(3, float)
+        else:
+            r_mat = np.identity(3, float)
+            r_mat[1,1] = -1.
+            r_mat[2,2] = -1.
+
+    forces = np.dot(r_mat, np.transpose(forces))
+    forces = np.transpose(forces)
+    # compute wrenches
+    wrenches = []
+    for i in range(face_n):
+        torque = np.cross((contact - center), forces[i])
+        wrenches.append(np.append(forces[i], torque))
+    wrenches = np.asarray(wrenches)
+    return wrenches
+
+
+def compute_grasp_stability(grasp_contacts, mu, com=None, face_n=8):
+    """ Computes Canny's grasp quality metric for the given n contacts.
+        :param grasp_contacts - An nx6 matrix where each row is a contact position and normal
+        :param mu - friction coefficient
+        :param com - center of mass of the grasped object (assumed to be [0,0,0], if None)
+        :param face_n - number of wrench cone faces
+    """
+    if com is None:
+        com = [0, 0, 0]
+    wrenches = []
+    grasp = np.asarray(grasp_contacts)
+    # iterate over each contact
+    for i in range(len(grasp)):
+        wrench_cone = generate_wrench_cone(grasp[i, :3], grasp[i, 3:], mu, com, face_n)
+        for wrench in wrench_cone:
+            wrenches.append(list(wrench))
+    wrenches = np.asarray(wrenches)
+    hull = ConvexHull(wrenches, incremental=False, qhull_options='Pp QJ')
+    offsets = -hull.equations[:, -1]
+    return min(offsets)
 
 
 class OpenRAVEDrawer:

@@ -7,7 +7,7 @@ import transformations
 from robotiqloader import RobotiqHand, InvalidTriangleException
 import sys, time, logging, copy
 import itertools, random
-from utils import ObjectFileIO, clamp
+from utils import ObjectFileIO, clamp, compute_grasp_stability
 import rospy
 
 
@@ -82,6 +82,8 @@ class HFTSSampler:
         self._obj_loaded = False
         self._max_iters = 40
         self._reachability_weight = 1.0
+        self._mu = 2.0
+        self._min_stability = 0.0
         self._b_force_new_hfts = False
         self._hops = num_hops
         self._pre_gasp_conf = None
@@ -119,8 +121,10 @@ class HFTSSampler:
         # Check whether the hand is collision free
         if self._robot.CheckSelfCollision():
             return False
-        # TODO need to check stability of established contacts
-        return self.is_grasp_collision_free()
+        real_contacts = self.get_real_contacts()
+        stability = compute_grasp_stability(grasp_contacts=real_contacts,
+                                            mu=self._mu)
+        return stability > self._min_stability and self.is_grasp_collision_free()
 
     def clear_config_cache(self):
         self._pre_gasp_conf = None
@@ -264,6 +268,19 @@ class HFTSSampler:
                 tmp[-1] = finger_combo[i]
                 labels_tmp.append(tmp)
         return labels_tmp
+
+    def get_real_contacts(self):
+        collision_report = orpy.CollisionReport()
+        real_contacts = []
+        # iterate over all fingertip links and determine the contacts
+        for eel in self._robot.get_fingertip_links():
+            link = self._robot.GetLink(eel)
+            self._orEnv.CheckCollision(self._obj, link, report=collision_report)
+            if len(collision_report.contacts) == 0:
+                raise ValueError('[HFTSSampler::get_real_contacts] No contacts found')
+            real_contacts.append(np.concatenate((collision_report.contacts[0].pos, collision_report.contacts[0].norm)))
+        real_contacts = np.asarray(real_contacts)
+        return real_contacts
 
     def get_root_node(self):
         possible_num_children, possible_num_leaves = self.get_branch_information(0)
@@ -447,8 +464,7 @@ class HFTSSampler:
         else:
             return False
 
-    def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False):
-        # TODO this method as it is right now is only useful for the Robotiq hand.
+    def _simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False):
         self.draw_contacts(object_contacts)
         self._robot.SetDOFValues(grasp_conf)
         try:
@@ -457,22 +473,23 @@ class HFTSSampler:
         except InvalidTriangleException as ite:
             logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
             return False
-        self._robot.comply_fingertips()
+        open_success, tips_in_contact = self._robot.comply_fingertips()
+        if not open_success or not tips_in_contact:
+            return False
         if self.check_grasp_validity():
             return True
-        self.swap_contacts([0, 1], object_contacts)
-        self._robot.SetDOFValues(grasp_conf)
-        try:
-            T = self._robot.hand_obj_transform(hand_contacts[:3, :3], object_contacts[:, :3])
-            self._robot.SetTransform(T)
-        except InvalidTriangleException as ite:
-            logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
-            return False
-        self.draw_contacts(object_contacts)
-        self._robot.comply_fingertips()
-        return self.check_grasp_validity()
+        return False
 
-    def swap_contacts(self, rows, object_contacts):
+    def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False):
+        # TODO this method as it is right now is only useful for the Robotiq hand.
+        if not self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt):
+            self.swap_contacts([0, 1], object_contacts)
+            return self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
+        else:
+            return True
+
+    @staticmethod
+    def swap_contacts(rows, object_contacts):
         frm = rows[0]
         to = rows[1]
         object_contacts[[frm, to], :] = object_contacts[[to, frm], :]

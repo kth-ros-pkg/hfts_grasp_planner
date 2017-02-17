@@ -141,14 +141,17 @@ class RobotiqHand:
         joint_index = self.GetJoint(LAST_FINGER_JOINT).GetDOFIndex()
         limit_value = self.GetDOFLimits()[1][joint_index]
         n_step /= 2
-        self.avoid_collision_at_fingers(n_step)
+        open_succes = self.avoid_collision_at_fingers(n_step)
+        if not open_succes:
+            return False, False
         curr_conf = self.GetDOFValues()
         step = (limit_value - curr_conf[joint_index]) / n_step
         for i in range(n_step):
             curr_conf[joint_index] += step
             self.SetDOFValues(curr_conf)
             if self.are_fingertips_in_contact():
-                break
+                return open_succes, True
+        return open_succes, False
 
     def are_fingertips_in_contact(self):
         links = self.get_fingertip_links()
