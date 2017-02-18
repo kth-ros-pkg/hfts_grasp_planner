@@ -356,6 +356,20 @@ def dist_in_range(d, r):
         return 0.0
 
 
+def normal_distance(normals_a, normals_b):
+    d = 0.0
+    for i in range(len(normals_a)):
+        d += vec_angel_diff(normals_a[i], normals_b[i])
+    return d
+
+
+def position_distance(pos_values_a, pos_values_b):
+    d = 0.0
+    for i in range(len(pos_values_a)):
+        d += np.linalg.norm(pos_values_a[i] - pos_values_b[i])
+    return d
+
+
 def generate_wrench_cone(contact, normal, mu, center, face_n):
     ref_vec = np.array([0, 0, 1])
     center = np.array(center)

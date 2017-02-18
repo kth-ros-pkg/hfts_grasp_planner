@@ -184,13 +184,14 @@ class RobotiqHandVirtualManifold:
         it is not needed to model a reachability manifold for the Robotiq-S.
     """
     def __init__(self, or_hand, com_center_weight=0.5, pos_reach_weight=5.0, f01_parallelism_weight=1.0,
-                 grasp_symmetry_weight=1.0, grasp_flatness_weight=1.0):
+                 grasp_symmetry_weight=1.0, grasp_flatness_weight=1.0, f2_centralism_weight=1.0):
         self._or_hand = or_hand
         self._com_center_weight = com_center_weight
         self._pos_reach_weight = pos_reach_weight
         self._f01_parallelism_weight = f01_parallelism_weight
         self._grasp_symmetry_weight = grasp_symmetry_weight
         self._grasp_flatness_weight = grasp_flatness_weight
+        self._f2_centralism_weight = f2_centralism_weight
         # The distances between fingertip 0 and 1, we can achieve:
         self._distance_range_0 = np.array([0.0255, 0.122])
         # The distances between the center of contacts 0,1 and contact 2, we can achieve:
@@ -206,7 +207,7 @@ class RobotiqHandVirtualManifold:
                              (self._distance_range_1[1] - self._distance_range_1[0])  # for joint 1
 
     def set_parameters(self, com_center_weight=None, pos_reach_weight=None, f01_parallelism_weight=None,
-                       grasp_symmetry_weight=None, grasp_flatness_weight=None):
+                       grasp_symmetry_weight=None, grasp_flatness_weight=None, f2_centralism_weight=None):
         if com_center_weight is not None:
             self._com_center_weight = com_center_weight
         if pos_reach_weight is not None:
@@ -217,6 +218,8 @@ class RobotiqHandVirtualManifold:
             self._grasp_symmetry_weight = grasp_symmetry_weight
         if grasp_flatness_weight is not None:
             self._grasp_flatness_weight = grasp_flatness_weight
+        if f2_centralism_weight is not None:
+            self._f2_centralism_weight = f2_centralism_weight
 
     def predict_hand_conf(self, q):
         """
@@ -227,6 +230,8 @@ class RobotiqHandVirtualManifold:
                 and config a hand configuration that achieves the grasp, if it is feasible,
                 else config is a configuration at joint limits.
         """
+        if q is None:
+            return float('inf'), None
         pos_residual0 = dist_in_range(q[0], self._distance_range_0)
         pos_residual1 = dist_in_range(q[1], self._distance_range_1)
         # Check whether the desired contact distance is within the reachable range
@@ -271,7 +276,6 @@ class RobotiqHandVirtualManifold:
         vec_02 = grasp[2, :3] - grasp[0, :3]
         triangle_normal = np.cross(vec_01, vec_02)
         triangle_area = np.linalg.norm(triangle_normal)
-        triangle_normal /= triangle_area
         triangle_center = np.sum(grasp, 0)[:3] / 3.0
         return triangle_area - self._com_center_weight * np.linalg.norm(obj_com - triangle_center)
 
@@ -293,13 +297,19 @@ class RobotiqHandVirtualManifold:
         # return dist_10 + dist_c2 - self._com_center_weight * d
         
     def get_pred_res(self, q):
-        pos_residual0 = dist_in_range(q[0], self._distance_range_0)
-        pos_residual1 = dist_in_range(q[1], self._distance_range_1)
-        # pos_residual0 = self.exp_distance_range(q[0], self._distance_range_0)
-        # pos_residual1 = self.exp_distance_range(q[1], self._distance_range_1)
-        r = self._pos_reach_weight * (pos_residual0 + pos_residual1) -\
-            self._f01_parallelism_weight * q[2] + self._grasp_symmetry_weight * q[3] + \
-            self._grasp_flatness_weight * q[4]
+        # pos_residual0 = dist_in_range(q[0], self._distance_range_0)
+        # pos_residual1 = dist_in_range(q[1], self._distance_range_1)
+        pos_residual0 = self.exp_distance_range(q[0], self._distance_range_0)
+        pos_residual1 = self.exp_distance_range(q[1], self._distance_range_1)
+        r = self._pos_reach_weight * (pos_residual0 + pos_residual1) +\
+            self._f01_parallelism_weight * (1.0 - q[2]) + \
+            self._grasp_symmetry_weight * (1.0 + q[3]) + \
+            self._grasp_flatness_weight * abs(q[4]) + \
+            self._f2_centralism_weight * abs(q[5])
+        # r = self._f01_parallelism_weight * (1.0 - q[2]) + \
+        #     self._grasp_symmetry_weight * (1.0 + q[3]) + \
+        #     self._f2_centralism_weight * abs(q[5])
+        assert r >= 0.0
         return r
 
     @staticmethod
@@ -310,18 +320,20 @@ class RobotiqHandVirtualManifold:
             [[position, normal], [position, normal], [position, normal]] where all vectors are defined in
             the object's frame.
         :return:
-            A grasp encoding: [distance_01, distance_2c, angle_difference_01, angle_difference_201] where
+            A grasp encoding: [distance_01, distance_2c, parallelism_01, parallelism_201,
+            parallelism_triangle, centralism] where
             distance_01 is the distance between the contact for finger 0 and 1,
             distance_2c is the distance between contact 2 and the center between contact 0 and 1,
-            angle_difference_01 is the difference in angle between normals of contact 0 and 1,
-            angle_difference_201 is the difference in angle between normals of contact 2 and - avg_normal of
-                contact 0 and 1
+            parallelism_01 is the dot product of the normals of contact 0 and 1,
+            parallelism_201 is the dot product of the avg normal of contact 0,1 and the normal of contact 2
+            parallelism_triangle is the sum of the dot products of contact normal i and the normal of the
+                                 triangle spanned by all contact points
+            centralism is a measure of how centralized contact 2 is with respect to contact 0 and 1, where
+                                0.0 means perfectly centralized, < 0.0 biased towards contact 0, > 0.0 towards contact 1
         """
         vec_01 = grasp[1, :3] - grasp[0, :3]
         vec_02 = grasp[2, :3] - grasp[0, :3]
         center_01 = (grasp[0, :3] + grasp[1, :3]) / 2.0
-        triangle_normal = np.cross(vec_01, vec_02)
-        triangle_normal /= np.linalg.norm(triangle_normal)
         vec_c2 = grasp[2, :3] - center_01
         avg_normal_01 = (grasp[0, 3:] + grasp[1, 3:]) / 2.
         # Features:
@@ -329,11 +341,20 @@ class RobotiqHandVirtualManifold:
         distance_c2 = np.linalg.norm(vec_c2)
         parallelism_01 = np.dot(grasp[0, 3:], grasp[1, 3:])
         parallelism_201 = np.dot(grasp[2, 3:], avg_normal_01)
-        parallelism_triangle = np.abs(np.dot(triangle_normal, grasp[0, 3:])) + \
-                               np.abs(np.dot(triangle_normal, grasp[1, 3:])) + \
-                               np.abs(np.dot(triangle_normal, grasp[2, 3:]))
-
-        return [distance_10, distance_c2, parallelism_01, parallelism_201, parallelism_triangle]
+        helper_normal = np.cross(grasp[0, 3:], grasp[1, 3:])
+        if np.linalg.norm(helper_normal) == 0.0:
+            # In this case normals 0 and 1 are in the same plane
+            helper_normal = grasp[0, 3:]
+        parallelism_triangle = np.dot(helper_normal, grasp[2, 3:])
+        centralism = np.dot(vec_01 / distance_10, vec_02) / distance_10 - 0.5
+        if math.isnan(parallelism_triangle):
+            # This only happens if the contacts do not span a triangle.
+            # In this case the 'triangleness' of the grasp is governed by the parallelism of the contacts
+            parallelism_triangle = parallelism_01 + parallelism_201
+        if math.isnan(centralism):
+            # this happens if contact 0 and 1 are identical
+            centralism = 0.0
+        return [distance_10, distance_c2, parallelism_01, parallelism_201, parallelism_triangle, centralism]
         # angle_diff_01 = vec_angel_diff(grasp[0, 3:], grasp[1, 3:])
         # angle_diff_201 = vec_angel_diff(grasp[2, 3:], -avg_normal_01)
         # return [distance_10, distance_c2, angle_diff_01, angle_diff_201]

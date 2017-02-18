@@ -45,7 +45,7 @@ class HandlerClass(object):
         # pointCloud = req.point_cloud
         rospy.loginfo('Executing planner with parameters: ' + str(self._params))
         # Load the requested object first
-        # TODO setting this boolean parameter should be solver in a more elegant manner
+        # TODO setting this boolean parameter should be solved in a more elegant manner
         self._object_loader._b_var_filter = self._params['hfts_filter_points']
         self._planner.load_object(req.object_identifier)
         hfts_gen_params = {'max_normal_variance': self._params['max_normal_variance'],
@@ -60,6 +60,7 @@ class HandlerClass(object):
                                      f01_parallelism_weight=self._params['reachability_f01_parallelism'],
                                      grasp_symmetry_weight=self._params['reachability_grasp_symmetry'],
                                      grasp_flatness_weight=self._params['reachability_grasp_flatness'],
+                                     f2_centralism_weight=self._params['reachability_f2_centralism_weight'],
                                      pos_reach_weight=self._params['position_reachability_weight'],
                                      hfts_generation_params=hfts_gen_params,
                                      b_force_new_hfts=self._params['force_new_hfts'])

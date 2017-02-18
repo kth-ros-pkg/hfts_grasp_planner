@@ -229,6 +229,7 @@ class HandlerClass(object):
                                      f01_parallelism_weight=self._params['reachability_f01_parallelism'],
                                      grasp_symmetry_weight=self._params['reachability_grasp_symmetry'],
                                      grasp_flatness_weight=self._params['reachability_grasp_flatness'],
+                                     f2_centralism_weight=self._params['reachability_f2_centralism_weight'],
                                      hfts_generation_params=hfts_gen_params,
                                      b_force_new_hfts=self._params['force_new_hfts'],
                                      min_iterations=self._params['min_iterations'],

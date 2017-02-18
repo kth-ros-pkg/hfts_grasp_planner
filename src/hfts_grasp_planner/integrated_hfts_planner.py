@@ -220,8 +220,9 @@ class IntegratedHFTSPlanner(object):
                        time_limit=None, com_center_weight=None,
                        pos_reach_weight=None, f01_parallelism_weight=None,
                        grasp_symmetry_weight=None, grasp_flatness_weight=None,
-                       reachability_weight=None, hfts_generation_params=None,
-                       max_num_hierarchy_descends=None, b_force_new_hfts=None):
+                       f2_centralism_weight=None, reachability_weight=None,
+                       hfts_generation_params=None, max_num_hierarchy_descends=None,
+                       b_force_new_hfts=None):
         # TODO some of these parameters are robot hand specific
         if time_limit is not None:
             self._time_limit = time_limit
@@ -232,6 +233,7 @@ class IntegratedHFTSPlanner(object):
                                            f01_parallelism_weight=f01_parallelism_weight,
                                            grasp_symmetry_weight=grasp_symmetry_weight,
                                            grasp_flatness_weight=grasp_flatness_weight,
+                                           f2_centralism_weight=f2_centralism_weight,
                                            reachability_weight=reachability_weight,
                                            b_force_new_hfts=b_force_new_hfts,
                                            hfts_generation_params=hfts_generation_params)

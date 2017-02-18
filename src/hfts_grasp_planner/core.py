@@ -1,14 +1,15 @@
 #! /usr/bin/python
 
 import numpy as np
-from math import exp
+import math
 import openravepy as orpy
 import transformations
 from robotiqloader import RobotiqHand, InvalidTriangleException
 import sys, time, logging, copy
 import itertools, random
-from utils import ObjectFileIO, clamp, compute_grasp_stability
+from utils import ObjectFileIO, clamp, compute_grasp_stability, normal_distance, position_distance, dist_in_range
 import rospy
+import scipy.optimize
 
 
 class PlanningSceneInterface(object):
@@ -163,32 +164,39 @@ class HFTSSampler:
         for i in range(self._num_contacts):
             p, n = self.get_cluster_repr(contact_labels[i])
             contacts.append(list(p) + list(n))
-        # TODO make this to a non-object-global variable
         object_contacts = np.asarray(contacts)
         code_tmp = self._hand_manifold.encode_grasp(object_contacts)
         dummy, grasp_conf = self._hand_manifold.predict_hand_conf(code_tmp)
         hand_contacts = self._robot.get_ori_tip_pn(grasp_conf)
         return grasp_conf, object_contacts, hand_contacts
 
-    def _debug_visualize(self, labels):
+    def _debug_visualize(self, labels, handle_index=-1):
         grasp_conf, object_contacts, hand_contacts = self.compose_grasp_info(labels)
         rospy.logwarn('Debug visualize')
         self._robot.SetVisible(False)
-        self.draw_contacts(object_contacts)
+        self.draw_contacts(object_contacts, handle_index=handle_index)
         # time.sleep(1.0)
         # self._robot.SetVisible(True)
 
-    def draw_contacts(self, object_contacts):
-        self._or_handles = []
+    def draw_contacts(self, object_contacts, handle_index=-1):
+        if len(self._or_handles) == 0:
+            self._or_handles.append(None)
+            self._or_handles.append(None)
         # TODO this is hard coded for three contacts
         colors = [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]]
-        width = 0.001
-        length = 0.1
+        if handle_index != 0:
+            width = 0.003
+            length = 0.05
+        else:
+            width = 0.001
+            length = 0.1
         # Draw planned contacts
+        arrow_handles = []
         for i in range(object_contacts.shape[0]):
-            self._or_handles.append(self._orEnv.drawarrow(object_contacts[i, :3],
-                                                          object_contacts[i, :3] - length * object_contacts[i, 3:],
-                                                          width, colors[i]))
+            arrow_handles.append(self._orEnv.drawarrow(object_contacts[i, :3],
+                                                       object_contacts[i, :3] - length * object_contacts[i, 3:],
+                                                       width, colors[i]))
+        self._or_handles[handle_index] = arrow_handles
 
     def evaluate_grasp(self, contact_label):
         contacts = [] # a list of contact positions and normals
@@ -196,12 +204,14 @@ class HFTSSampler:
             p, n = self.get_cluster_repr(contact_label[i])
             contacts.append(list(p) + list(n))
         contacts = np.asarray(contacts)
+        self.draw_contacts(contacts)
         s_tmp = self._hand_manifold.compute_grasp_quality(self._obj_com, contacts)
         code_tmp = self._hand_manifold.encode_grasp(contacts)
         r_tmp, dummy = self._hand_manifold.predict_hand_conf(code_tmp)
         # TODO: Research topic. This is kind of hack. Another objective function might be better
         # o_tmp = s_tmp / (r_tmp + 0.000001)
         o_tmp = s_tmp - self._reachability_weight * r_tmp
+        assert not math.isnan(o_tmp) and not math.isinf(math.fabs(o_tmp))
         # o_tmp = s_tmp / (r_tmp + 1.0)
         return s_tmp, r_tmp, o_tmp
 
@@ -209,6 +219,7 @@ class HFTSSampler:
         for label in old_labels:
             label.append(np.random.randint(self._branching_factors[len(label)]))
         s_tmp, r_tmp, o_tmp = self.evaluate_grasp(old_labels)
+        self._debug_visualize(old_labels, 0)
         return o_tmp, old_labels
 
     def get_branch_information(self, level):
@@ -372,7 +383,7 @@ class HFTSSampler:
                 if self.shc_evaluation(o_tmp, best_o):
                     contact_label = labels_tmp
                     best_o = o_tmp
-                    # self._debug_visualize(labels_tmp)
+                    self._debug_visualize(labels_tmp, handle_index=0)
             # Descend to next level if we iterate at least once more
             if depth_limit > 0:
                 best_o, contact_label = self.extend_hfts_node(contact_label)
@@ -401,7 +412,7 @@ class HFTSSampler:
         #     stability = 0.0
 
         is_leaf = (len(contact_label[0]) == self._num_levels)
-        is_goal_sample = (sample_q == 0) # and is_leaf
+        is_goal_sample = (sample_q == 0) and is_leaf
         if not is_goal_sample and grasp_conf is not None:
             rospy.logdebug('[HFTSSampler::sample_grasp] Approximate has final quality: %i' % sample_q)
             b_approximate_feasible = self._robot.avoid_collision_at_fingers(n_step=20)
@@ -441,8 +452,8 @@ class HFTSSampler:
     def set_parameters(self, max_iters=None, reachability_weight=None,
                        com_center_weight=None, pos_reach_weight=None,
                        grasp_symmetry_weight=None, f01_parallelism_weight=None,
-                       grasp_flatness_weight=None, hfts_generation_params=None,
-                       b_force_new_hfts=None):
+                       grasp_flatness_weight=None, f2_centralism_weight=None,
+                       hfts_generation_params=None, b_force_new_hfts=None):
         # TODO some of these parameters are Robotiq hand specific. We probably wanna pass them as dictionary
         if max_iters is not None:
             self._max_iters = max_iters
@@ -452,7 +463,7 @@ class HFTSSampler:
             assert self._reachability_weight >= 0.0
         # TODO this is Robotiq hand specific
         self._hand_manifold.set_parameters(com_center_weight, pos_reach_weight, f01_parallelism_weight,
-                                           grasp_symmetry_weight, grasp_flatness_weight)
+                                           grasp_symmetry_weight, grasp_flatness_weight, f2_centralism_weight)
         if hfts_generation_params is not None:
             self._object_io_interface.set_hfts_generation_parameters(hfts_generation_params)
         if b_force_new_hfts is not None:
@@ -473,6 +484,8 @@ class HFTSSampler:
         except InvalidTriangleException as ite:
             logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
             return False
+        if post_opt:
+            self._post_optimization(object_contacts)
         open_success, tips_in_contact = self._robot.comply_fingertips()
         if not open_success or not tips_in_contact:
             return False
@@ -513,6 +526,51 @@ class HFTSSampler:
             points = [self._data_labeled[t, 0:3] for t in idx][0]
             points = np.asarray(points)
             self.cloud_plot.append(self._orEnv.plot3(points=points, pointsize=0.006, colors=colors[i], drawstyle=1))
+
+    def _post_optimization(self, grasp_contacts):
+        transform = self._robot.GetTransform()
+        angle, axis, point = transformations.rotation_from_matrix(transform)
+        # further optimize hand configuration and pose
+        # TODO this is Robotiq hand specific
+        transform_params = axis.tolist() + [angle] + transform[:3, 3].tolist()
+        robot_dofs = self._robot.GetDOFValues().tolist()
+
+        def constraint_fn(x, *args):
+            positions, normals, robot = args
+            lower_limits, upper_limits = robot.GetDOFLimits()
+            return -dist_in_range(x[0], [lower_limits[0], upper_limits[0]]) - \
+                   dist_in_range(x[1], [lower_limits[1], upper_limits[1]])
+        x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
+                                           [constraint_fn],
+                                           rhobeg=.1, rhoend=1e-4,
+                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot),
+                                           maxfun=int(1e8), iprint=0)
+        self._robot.SetDOFValues(x_min[:2])
+        axis = x_min[2:5]
+        angle = x_min[5]
+        position = x_min[6:]
+        transform = transformations.rotation_matrix(angle, axis)
+        transform[:3, 3] = position
+        self._robot.SetTransform(transform)
+
+    @staticmethod
+    def _post_optimization_obj_fn(x, *params):
+        # TODO this is Robotiq hand specific
+        desired_contact_points, desired_contact_normals, robot = params
+        dofs = x[:2]
+        robot.SetDOFValues(dofs)
+        axis = x[2:5]
+        angle = x[5]
+        position = x[6:]
+        transform = transformations.rotation_matrix(angle, axis)
+        transform[:3, 3] = position
+        robot.SetTransform(transform)
+        contacts = robot.get_tip_pn()
+        temp_positions = contacts[:, :3]
+        temp_normals = contacts[:, 3:]
+        pos_err = position_distance(desired_contact_points, temp_positions)
+        normal_err = normal_distance(desired_contact_normals, temp_normals)
+        return pos_err + normal_err
 
 
 class HFTSNode:
