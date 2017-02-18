@@ -48,13 +48,16 @@ class HandlerClass(object):
         b_show_search_tree = rospy.get_param(node_name + '/show_search_tree', default=False)
         env_file = self._package_path + '/' + rospy.get_param(node_name + '/environment_file_name')
         hand_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_file')
+        hand_cache_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_cache_file')
         robot_name = rospy.get_param(node_name + '/robot_name')
         manip_name = rospy.get_param(node_name + '/manipulator_name')
         # Load dynamic parameters also from the parameter server
         # Make sure we do not visualize grasps and the system at the same time (only one OR viewer)
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
         # Create planner
-        self._planner = IntegratedHFTSPlanner(env_file=env_file, robot_name=robot_name,
+        self._planner = IntegratedHFTSPlanner(env_file=env_file,
+                                              hand_cache_file=hand_cache_file,
+                                              robot_name=robot_name,
                                               manipulator_name=manip_name,
                                               data_root_path=self._package_path + '/data',
                                               b_visualize_system=b_visualize_system,

@@ -1,10 +1,14 @@
 import numpy as np
 import transformations
 import math
+import os
+import logging
+from scipy.spatial import KDTree
 from utils import vec_angel_diff, dist_in_range
 
 # TODO this should be specified in a configuration file
 LAST_FINGER_JOINT = 'finger_2_joint_1'
+
 
 # TODO this should be defined in a super module
 class InvalidTriangleException(Exception):
@@ -16,13 +20,14 @@ class InvalidTriangleException(Exception):
 
 
 class RobotiqHand:
-    def __init__(self, env=None, hand_file=None):
+    def __init__(self, env, hand_cache_file, hand_file):
         self._or_env = env
         self._or_env.Load(hand_file)
         self._or_hand = self._or_env.GetRobots()[0]
         self._plot_handler = []
-        self._hand_mani = RobotiqHandVirtualManifold(self._or_hand)
-    
+        # self._hand_mani = RobotiqHandVirtualManifold(self._or_hand)
+        self._hand_mani = RobotiqHandKDTreeManifold(self, hand_cache_file)
+
     def __getattr__(self, attr): # composition
         return getattr(self._or_hand, attr)
         
@@ -177,7 +182,163 @@ class RobotiqHand:
             self.SetDOFValues([start_value + i * step], [finger_joint_idx])
         return False
 
-    
+
+# TODO should be generalized to any type of hand
+class RobotiqHandKDTreeManifold:
+    """
+        KD tree based hand manifold for the Robotiq hand
+    """
+    CODE_DIMENSION = 6
+    NUM_SAMPLES = 10000
+
+    def __init__(self, or_robot, cache_file_name):
+        self._or_robot = or_robot
+        self._cache_file_name = cache_file_name
+        self._codes = None
+        self._hand_configurations = None
+        self._kd_tree = None
+        self._code_position_scale = 10.0
+        self._com_center_weight = 1.0
+
+    def set_parameters(self, com_center_weight=None):
+        if com_center_weight is not None:
+            self._com_center_weight = com_center_weight
+
+    def load(self):
+        if os.path.exists(self._cache_file_name):
+            logging.info('[RobotiqHandKDTreeManifold::load] Loading sample data set form disk.')
+            data = np.load(self._cache_file_name)
+            self._codes = data[:, :self.CODE_DIMENSION]
+            self._hand_configurations = data[:, self.CODE_DIMENSION:]
+        else:
+            logging.info('[RobotiqHandKDTreeManifold::load] No data set available. Generating new...')
+            self._sample_configuration_space()
+            data = np.concatenate((self._codes, self._hand_configurations), axis=1)
+            np.save(self._cache_file_name, data)
+        self._kd_tree = KDTree(self._codes)
+        # self.test_manifold()
+
+    def _sample_configuration_space(self):
+        lower_limits, upper_limits = self._or_robot.GetDOFLimits()
+        #TODO can this be done in a niceer way? closing the hand all the way does not make sense
+        # TODO hence this limit instead
+        upper_limits[1] = 0.93124747
+        joint_ranges = np.array(upper_limits) - np.array(lower_limits)
+        interpolation_steps = int(math.sqrt(self.NUM_SAMPLES))
+        step_sizes = joint_ranges / interpolation_steps
+        config = np.array(lower_limits)
+        self._hand_configurations = np.zeros((self.NUM_SAMPLES, self._or_robot.GetDOF()))
+        self._codes = np.zeros((self.NUM_SAMPLES, self.CODE_DIMENSION))
+        sample_idx = 0
+        logging.info('[RobotiqHandKDTreeManifold::Sampling %i hand configurations.' % self.NUM_SAMPLES)
+        for j0 in range(interpolation_steps):
+            config[0] = j0 * step_sizes[0] + lower_limits[0]
+            for j1 in range(interpolation_steps):
+                config[1] = j1 * step_sizes[1] + lower_limits[1]
+                self._or_robot.SetDOFValues(config)
+                if self._or_robot.CheckSelfCollision():
+                    continue
+                fingertip_contacts = self._or_robot.get_ori_tip_pn(config)
+                handles = []
+                self.draw_contacts(fingertip_contacts, handles)
+                self._hand_configurations[sample_idx] = np.array(config)
+                self._codes[sample_idx] = self.encode_grasp(fingertip_contacts)
+                sample_idx += 1
+
+        self._hand_configurations = self._hand_configurations[:sample_idx, :]
+        self._codes = self._codes[:sample_idx, :]
+        #TODO see whether we wanna normalize codes
+        logging.info('[RobotiqHandKDTreeManifold::Sampling finished. Found %i collision-free hand configurations.' % sample_idx)
+
+    def test_manifold(self):
+        """
+            For debugging...
+            Essentially repeats the sampling procedure, but instead of filling the internal
+            database it queries it and compares how accurate the retrieval is.
+        """
+        lower_limits, upper_limits = self._or_robot.GetDOFLimits()
+        upper_limits[1] = 0.93124747
+        joint_ranges = np.array(upper_limits) - np.array(lower_limits)
+        interpolation_steps = int(math.sqrt(self.NUM_SAMPLES))
+        step_sizes = joint_ranges / interpolation_steps
+        config = np.array(lower_limits)
+        avg_error, min_error, max_error = 0.0, float('inf'), -float('inf')
+        num_evaluations = 0
+
+        for j0 in range(interpolation_steps):
+            config[0] = j0 * step_sizes[0] + lower_limits[0]
+            for j1 in range(interpolation_steps):
+                config[1] = j1 * step_sizes[1] + lower_limits[1]
+                self._or_robot.SetDOFValues(config)
+                if self._or_robot.CheckSelfCollision():
+                    continue
+                fingertip_contacts = self._or_robot.get_ori_tip_pn(config)
+                code = self.encode_grasp(fingertip_contacts)
+                distance, retrieved_config = self.predict_hand_conf(code)
+                error = np.linalg.norm(retrieved_config - config)
+                avg_error += error
+                min_error = min(error, min_error)
+                max_error = max(error, max_error)
+                num_evaluations += 1
+
+        avg_error = avg_error / num_evaluations
+        logging.info('[RobotiqHandKDTreeManifold::test_manifold] Average error: %f, max: %f, min: %f' %(avg_error, max_error, min_error))
+
+    def encode_grasp(self, grasp):
+        """
+            Encodes the given grasp (rotationally invariant).
+        """
+        code_0 = self.encode_contact_pair(grasp[0], grasp[1])
+        code_1 = self.encode_contact_pair(grasp[0], grasp[2])
+        code_2 = self.encode_contact_pair(grasp[1], grasp[2])
+
+        #TODO see whether we wanna normalize codes
+        return np.concatenate((code_0, code_1, code_2))
+
+    def encode_contact_pair(self, contact_0, contact_1):
+        position_diff = np.linalg.norm(contact_0[:3] - contact_1[:3])
+        normal_diff = np.linalg.norm(contact_0[3:] - contact_1[3:])
+        return np.array([position_diff * self._code_position_scale, normal_diff])
+
+    def predict_hand_conf(self, code):
+        distance, index = self._kd_tree.query(code)
+        hand_conf = self._hand_configurations[index]
+        return distance, hand_conf
+
+    def compute_grasp_quality(self, obj_com, grasp):
+        """
+        Computes a grasp quality for the given grasp.
+        :param obj_com: The center of mass of the object.
+        :param grasp: The grasp as matrix
+            [[position, normal],
+             [position, normal],
+             [position, normal]] where all vectors are defined in the object's frame.
+        :return: a floating point number representing the quality (the larger, the better)
+        """
+        # TODO we could use Canny instead
+        # The idea is that a grasp with the Robotiq hand is most stable if the contacts
+        # span a large triangle and the center of mass of the object is close this triangle's
+        # center
+        vec_01 = grasp[1, :3] - grasp[0, :3]
+        vec_02 = grasp[2, :3] - grasp[0, :3]
+        triangle_normal = np.cross(vec_01, vec_02)
+        triangle_area = np.linalg.norm(triangle_normal)
+        triangle_center = np.sum(grasp, 0)[:3] / 3.0
+        return triangle_area - self._com_center_weight * np.linalg.norm(obj_com - triangle_center)
+
+    def draw_contacts(self, poses, handles):
+        # TODO this is hard coded for three contacts
+        colors = [[1, 0, 0, 1], [0, 1, 0, 1], [0, 0, 1, 1]]
+        width = 0.001
+        length = 0.05
+        env = self._or_robot.GetEnv()
+        # Draw planned contacts
+        for i in range(poses.shape[0]):
+            handles.append(env.drawarrow(poses[i, :3],
+                                         poses[i, :3] - length * poses[i, 3:],
+                                         width, colors[i]))
+
+
 class RobotiqHandVirtualManifold:
     """
         Mimic the hand manifold interface from our ICRA'16 paper,

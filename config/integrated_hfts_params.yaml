@@ -9,7 +9,8 @@ p_goal_min: 0.01
 min_iterations: 20
 max_iterations: 70
 environment_file_name: data/environments/test_env.xml
-hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s.xml
+hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
+hand_cache_file: data/cache/robotiq_hand.npy
 robot_name: kmr_iiwa_robotiq
 manipulator_name: arm_with_robotiq
 free_space_weight: 0.5

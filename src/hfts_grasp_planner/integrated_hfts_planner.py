@@ -15,7 +15,7 @@ from hierarchy_visualization import FreeSpaceProximitySamplerVisualizer
 class IntegratedHFTSPlanner(object):
     """ Implements a simple to use interface to the integrated HFTS planner. """
 
-    def __init__(self, env_file, hand_file, robot_name, manipulator_name,
+    def __init__(self, env_file, hand_file, hand_cache_file, robot_name, manipulator_name,
                  data_root_path, dof_weights=None, max_num_hierarchy_descends=4,
                  min_iterations=20, max_iterations=70, p_goal_tree=0.8,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
@@ -70,7 +70,7 @@ class IntegratedHFTSPlanner(object):
         planning_scene_interface = PlanningSceneInterface(self._env, self._robot.GetName())
         self._object_io_interface = ObjectFileIO(data_path=data_root_path)
         self._grasp_planner = GraspGoalSampler(object_io_interface=self._object_io_interface,
-                                               hand_path=hand_file,
+                                               hand_path=hand_file, hand_cache_file=hand_cache_file,
                                                planning_scene_interface=planning_scene_interface,
                                                visualize=b_visualize_grasps)
         hierarchy_visualizer = None

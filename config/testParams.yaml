@@ -1,3 +1,4 @@
 testObj: bunny
 visualize: True
-handFile: /models/robotiq/urdf_openrave_conversion/robotiq_s.xml
+hand_cache_file: data/cache/robotiq_hand.npy
+handFile: /models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml

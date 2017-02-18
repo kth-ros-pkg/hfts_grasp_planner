@@ -32,7 +32,8 @@ class HandlerClass(object):
         self._planner = HFTSSampler(self._object_loader, num_hops=4, vis=b_visualize)
         # Load hand and save joint names
         hand_file = package_path + rospy.get_param(rospy.get_name() + '/handFile')
-        self._planner.load_hand(hand_file)
+        hand_cache_file = package_path + '/' + rospy.get_param(rospy.get_name() + '/hand_cache_file')
+        self._planner.load_hand(hand_file, hand_cache_file)
         or_hand = self._planner.get_or_hand()
         joints = or_hand.GetJoints()
         self._joint_names = []

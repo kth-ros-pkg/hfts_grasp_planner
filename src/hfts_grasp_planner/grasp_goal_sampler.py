@@ -21,7 +21,7 @@ class GraspGoalSampler:
     """ Wrapper class for the HFTS Grasp Planner/Sampler that allows a full black box usage."""
 
     # TODO data_path is specific to reading objects from a filesystem. Better probably to pass ObjectIO
-    def __init__(self, object_io_interface, hand_path, planning_scene_interface,
+    def __init__(self, object_io_interface, hand_path, hand_cache_file, planning_scene_interface,
                  visualize=False, open_hand_offset=0.1):
         """ Creates a new wrapper.
             @param object_io_interface IOObject Object that handles IO requests
@@ -39,7 +39,7 @@ class GraspGoalSampler:
         self.grasp_planner.set_max_iter(100)
         self.open_hand_offset = open_hand_offset
         self.root_node = self.grasp_planner.get_root_node()
-        self.load_hand(hand_path)
+        self.load_hand(hand_path, hand_cache_file)
 
     def sample(self, depth_limit, post_opt=True):
         """ Samples a grasp from the root level. """
@@ -62,9 +62,9 @@ class GraspGoalSampler:
         """ Returns whether the given node is a goal or not. """
         return sampling_result.hierarchyInfo.is_goal()
 
-    def load_hand(self, hand_path):
+    def load_hand(self, hand_path, hand_cache_file):
         """ Reset the hand being used. @see __init__ for parameter description. """
-        self.grasp_planner.load_hand(hand_file=hand_path)
+        self.grasp_planner.load_hand(hand_file=hand_path, hand_cache_file=hand_cache_file)
 
     def set_object(self, obj_id, model_id=None):
         """ Set the object.
