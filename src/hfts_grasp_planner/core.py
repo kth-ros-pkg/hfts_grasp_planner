@@ -424,10 +424,10 @@ class HFTSSampler:
         #     rospy.logdebug('[HFTSSampler::sample_grasp] Doing post optimization for node %s' % str(contact_label))
         # Compute grasp quality (a combination of stability, reachability and collision conditions)
         # try:
-        b_robotiq_ok = self.simulate_grasp(grasp_conf=grasp_conf,
-                                           hand_contacts=hand_contacts,
-                                           object_contacts=object_contacts,
-                                           post_opt=post_opt)
+        b_robotiq_ok, grasp_conf, grasp_pose = self.simulate_grasp(grasp_conf=grasp_conf,
+                                                                   hand_contacts=hand_contacts,
+                                                                   object_contacts=object_contacts,
+                                                                   post_opt=post_opt)
         if b_robotiq_ok:
             sample_q = 0
             stability = best_o
@@ -454,8 +454,7 @@ class HFTSSampler:
         if is_leaf:
             logging.debug('[HFTSSampler::sample_grasp] We sampled a leaf')
 
-        if grasp_conf is not None:
-            grasp_pose = self._robot.GetTransform()
+        if grasp_conf is not None and grasp_pose is not None:
             collision_free_arm_ik, arm_conf, pre_grasp_conf = \
                 self.check_arm_grasp_validity(grasp_conf=grasp_conf,
                                               grasp_pose=grasp_pose,
@@ -512,23 +511,23 @@ class HFTSSampler:
             self._robot.SetTransform(T)
         except InvalidTriangleException as ite:
             logging.warn('[HFTSSampler::simulate_grasp] Caught an InvalidTriangleException: ' + str(ite))
-            return False
+            return False, grasp_conf, None
         if post_opt:
             self._post_optimization(object_contacts)
         open_success, tips_in_contact = self._robot.comply_fingertips()
         if not open_success or not tips_in_contact:
-            return False
+            return False, self._robot.GetDOFValues(), self._robot.GetTransform()
         if self.check_grasp_validity():
-            return True
-        return False
+            return True, self._robot.GetDOFValues(), self._robot.GetTransform()
+        return False, self._robot.GetDOFValues(), self._robot.GetTransform()
 
     def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False):
         # TODO this method as it is right now is only useful for the Robotiq hand.
-        if not self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt):
+        b_grasp_valid, grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
+        if not b_grasp_valid:
             self.swap_contacts([0, 1], object_contacts)
-            return self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
-        else:
-            return True
+            b_grasp_valid, grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
+        return b_grasp_valid, grasp_conf, grasp_pose
 
     @staticmethod
     def swap_contacts(rows, object_contacts):
@@ -557,6 +556,7 @@ class HFTSSampler:
             self.cloud_plot.append(self._orEnv.plot3(points=points, pointsize=0.006, colors=colors[i], drawstyle=1))
 
     def _post_optimization(self, grasp_contacts):
+        logging.info('[HFTSSampler::_post_optimization] Performing post optimization.')
         transform = self._robot.GetTransform()
         angle, axis, point = transformations.rotation_from_matrix(transform)
         # further optimize hand configuration and pose
