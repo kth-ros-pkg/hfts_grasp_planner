@@ -17,7 +17,7 @@ class IntegratedHFTSPlanner(object):
 
     def __init__(self, env_file, hand_file, hand_cache_file, robot_name, manipulator_name,
                  data_root_path, dof_weights=None, max_num_hierarchy_descends=4,
-                 min_iterations=20, max_iterations=70, p_goal_tree=0.8,
+                 min_iterations=20, max_iterations=70, p_goal_tree=0.8, vel_factor=0.2,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
                  b_show_traj=False, b_show_search_tree=False, free_space_weight=0.1, connected_space_weight=4.0,
                  use_approximates=True, compute_velocities=True, time_limit=60.0):
@@ -95,7 +95,9 @@ class IntegratedHFTSPlanner(object):
         self._rrt_planner = RRT(p_goal_provider, self._cSampler, self._hierarchy_sampler, logging.getLogger(),
                                 pgoal_tree=p_goal_tree, constraints_manager=self._constraints_manager)
         self._time_limit = time_limit
+        self._vel_factor = vel_factor
         self._last_path = None
+        self._last_traj = None
         self._last_obj = None
         self._compute_velocities = compute_velocities
         self._b_show_trajectory = b_show_traj
@@ -145,14 +147,28 @@ class IntegratedHFTSPlanner(object):
         self._robot.SetDOFVelocityLimits(vel_limits)
         return traj
 
-    def plan_arm_motion(self, target_pose, start_configuration):
+    def plan_arm_motion(self, target_pose, start_configuration, grasped_object=None):
         self._robot.SetDOFValues(start_configuration)
+        if self._debug_tree_drawer is not None:
+            self._debug_tree_drawer.clear()
+            self._debug_tree_drawer.draw_pose(target_pose)
+        vel_limits = self._robot.GetDOFVelocityLimits()
+        self._robot.SetDOFVelocityLimits(self._vel_factor * vel_limits)
+        if grasped_object is not None:
+            body = self._env.GetKinBody(grasped_object)
+            if body is not None:
+                self._robot.Grab(body)
         try:
             traj = self._or_motion_planner.MoveToHandPosition(matrices=[target_pose], outputtraj=True,
-                                                              outputtrajobj=True)
+                                                              outputtrajobj=True, execute=self._b_show_trajectory)
         except orpy.planning_error as pe:
             logging.info('[IntegratedHFTSPlanner::plan_arm_motion] Planning arm motion to pose failed.')
             traj = None
+        if grasped_object is not None:
+            body = self._env.GetKinBody(grasped_object)
+            if body is not None:
+                self._robot.Release(body)
+        self._robot.SetDOFVelocityLimits(vel_limits)
         return traj
 
     def plan(self, start_configuration):
@@ -172,7 +188,7 @@ class IntegratedHFTSPlanner(object):
             object_pose = self._env.GetKinBody(self._last_obj).GetTransform()
             grasp_pose = numpy.dot(numpy.linalg.inv(object_pose), grasp_pose)
         if self._compute_velocities:
-            self._last_traj = self.create_or_trajectory(self._last_path)
+            self._last_traj = self.create_or_trajectory(self._last_path, self._vel_factor)
             if self._b_show_trajectory and self._last_traj is not None:
                 controller = self._robot.GetController()
                 controller.SetPath(self._last_traj)
@@ -218,22 +234,15 @@ class IntegratedHFTSPlanner(object):
                        free_space_weight=None, connected_space_weight=None,
                        use_approximates=None, compute_velocities=None,
                        time_limit=None, com_center_weight=None,
-                       pos_reach_weight=None, f01_parallelism_weight=None,
-                       grasp_symmetry_weight=None, grasp_flatness_weight=None,
-                       f2_centralism_weight=None, reachability_weight=None,
+                       reachability_weight=None,
                        hfts_generation_params=None, max_num_hierarchy_descends=None,
-                       b_force_new_hfts=None):
+                       b_force_new_hfts=None, vel_factor=None):
         # TODO some of these parameters are robot hand specific
         if time_limit is not None:
             self._time_limit = time_limit
         if compute_velocities is not None:
             self._compute_velocities = compute_velocities
         self._grasp_planner.set_parameters(com_center_weight=com_center_weight,
-                                           pos_reach_weight=pos_reach_weight,
-                                           f01_parallelism_weight=f01_parallelism_weight,
-                                           grasp_symmetry_weight=grasp_symmetry_weight,
-                                           grasp_flatness_weight=grasp_flatness_weight,
-                                           f2_centralism_weight=f2_centralism_weight,
                                            reachability_weight=reachability_weight,
                                            b_force_new_hfts=b_force_new_hfts,
                                            hfts_generation_params=hfts_generation_params)
@@ -245,5 +254,7 @@ class IntegratedHFTSPlanner(object):
                                                connected_space_weight=connected_space_weight,
                                                k=max_num_hierarchy_descends,
                                                use_approximates=use_approximates)
+        if vel_factor is not None:
+            self._vel_factor = vel_factor
         # TODO implement the rest
 

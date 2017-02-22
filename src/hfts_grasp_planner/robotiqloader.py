@@ -247,7 +247,7 @@ class RobotiqHandKDTreeManifold:
 
         self._hand_configurations = self._hand_configurations[:sample_idx, :]
         self._codes = self._codes[:sample_idx, :]
-        #TODO see whether we wanna normalize codes
+        # TODO see whether we wanna normalize codes
         logging.info('[RobotiqHandKDTreeManifold::Sampling finished. Found %i collision-free hand configurations.' % sample_idx)
 
     def test_manifold(self):
@@ -292,7 +292,7 @@ class RobotiqHandKDTreeManifold:
         code_1 = self.encode_contact_pair(grasp[0], grasp[2])
         code_2 = self.encode_contact_pair(grasp[1], grasp[2])
 
-        #TODO see whether we wanna normalize codes
+        # TODO see whether we wanna normalize codes
         return np.concatenate((code_0, code_1, code_2))
 
     def encode_contact_pair(self, contact_0, contact_1):

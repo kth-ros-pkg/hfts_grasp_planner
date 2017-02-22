@@ -2,6 +2,8 @@
 
 import numpy as np
 import math
+from scipy.spatial import KDTree
+
 import openravepy as orpy
 import transformations
 from robotiqloader import RobotiqHand, InvalidTriangleException
@@ -86,6 +88,8 @@ class HFTSSampler:
         self._mu = 2.0
         self._min_stability = 0.0
         self._b_force_new_hfts = False
+        self._object_kd_tree = None
+        self._object_points = None
         # self._hops = num_hops
         # TODO remove this aga
         self._hops = 2
@@ -126,12 +130,8 @@ class HFTSSampler:
             return False
         real_contacts = self.get_real_contacts()
         # self.draw_contacts(real_contacts)
-        # TODO the real contacts may have (incorrectly) shitty normals, resulting in
-        # TODO bad stability. Maybe just check distance to planned contacts instead?
-        # TODO and use canny in HFTS optimization?
-        stability = 1
-        # stability = compute_grasp_stability(grasp_contacts=real_contacts,
-        #                                     mu=self._mu)
+        stability = compute_grasp_stability(grasp_contacts=real_contacts,
+                                            mu=self._mu)
         return stability > self._min_stability and self.is_grasp_collision_free()
 
     def clear_config_cache(self):
@@ -147,13 +147,17 @@ class HFTSSampler:
                           self._robot.GetDOFLimits()[1])
         self._robot.SetDOFValues(mean_values, range(len(mean_values)))
 
+    def create_object_kd_tree(self, points):
+        self._object_kd_tree = KDTree(points[:, :3])
+        self._object_points = points
+
     def compute_allowed_contact_combinations(self, depth, label_cache):
         # Now, for this parent get all possible contacts
         allowed_finger_combos = set(self._contact_combinations[depth])
         # Next, we want to filter out contact combinations that are stored in labelCache
         forbidden_finger_combos = set()
-        for graspLabel in label_cache:
-            finger_combo = tuple([x[-1] for x in graspLabel])
+        for grasp_label in label_cache:
+            finger_combo = tuple([x[-1] for x in grasp_label])
             forbidden_finger_combos.add(finger_combo)
         # Filter them out
         allowed_finger_combos.difference_update(forbidden_finger_combos)
@@ -313,9 +317,15 @@ class HFTSSampler:
         for eel in self._robot.get_fingertip_links():
             link = self._robot.GetLink(eel)
             self._orEnv.CheckCollision(self._obj, link, report=collision_report)
+            # self._orEnv.CheckCollision(link, self._obj, report=collision_report)
             if len(collision_report.contacts) == 0:
                 raise ValueError('[HFTSSampler::get_real_contacts] No contacts found')
-            real_contacts.append(np.concatenate((collision_report.contacts[0].pos, collision_report.contacts[0].norm)))
+            # TODO the normals reported by the collision check are wrong, so instead we use a nearest
+            # TODO neighbor lookup. Should see what's wrong with OpenRAVE here...
+            position = collision_report.contacts[0].pos
+            normal = self._object_points[self._object_kd_tree.query(position), 3:][1]
+            # normal = collision_report.contacts[0].norm
+            real_contacts.append(np.concatenate((position, normal)))
         real_contacts = np.asarray(real_contacts)
         return real_contacts
 
@@ -352,6 +362,7 @@ class HFTSSampler:
             self._object_io_interface.get_hfts(model_id, self._b_force_new_hfts)
         if self._data_labeled is None:
             raise RuntimeError('Could not load HFTS model for model ' + model_id)
+        self.create_object_kd_tree(self._data_labeled[:, :6])
         self._num_levels = len(self._branching_factors)
         # First, delete old object if there is any
         if self._obj_loaded:
@@ -477,10 +488,8 @@ class HFTSSampler:
         self._max_iters = m
 
     def set_parameters(self, max_iters=None, reachability_weight=None,
-                       com_center_weight=None, pos_reach_weight=None,
-                       grasp_symmetry_weight=None, f01_parallelism_weight=None,
-                       grasp_flatness_weight=None, f2_centralism_weight=None,
-                       hfts_generation_params=None, b_force_new_hfts=None):
+                       com_center_weight=None, hfts_generation_params=None,
+                       b_force_new_hfts=None):
         # TODO some of these parameters are Robotiq hand specific. We probably wanna pass them as dictionary
         if max_iters is not None:
             self._max_iters = max_iters
@@ -489,8 +498,6 @@ class HFTSSampler:
             self._reachability_weight = reachability_weight
             assert self._reachability_weight >= 0.0
         # TODO this is Robotiq hand specific, and outdated
-        # self._hand_manifold.set_parameters(com_center_weight, pos_reach_weight, f01_parallelism_weight,
-        #                                    grasp_symmetry_weight, grasp_flatness_weight, f2_centralism_weight)
         self._hand_manifold.set_parameters(com_center_weight)
         if hfts_generation_params is not None:
             self._object_io_interface.set_hfts_generation_parameters(hfts_generation_params)
@@ -583,7 +590,7 @@ class HFTSSampler:
 
         x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
                                            [joint_limits_constraint, collision_free_constraint],
-                                           rhobeg=.1, rhoend=1e-4,
+                                           rhobeg=.5, rhoend=1e-3,
                                            args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot),
                                            maxfun=int(1e8), iprint=0)
         self._robot.SetDOFValues(x_min[:2])

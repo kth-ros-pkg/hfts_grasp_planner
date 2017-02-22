@@ -126,7 +126,7 @@ class HandlerClass(object):
             ros_pose.orientation.x = quaternion[0]
             ros_pose.orientation.y = quaternion[1]
             ros_pose.orientation.z = quaternion[2]
-            ros_pose.orientation.w = quaternion[0]
+            ros_pose.orientation.w = quaternion[3]
             return ros_pose
         return None
 
@@ -228,11 +228,6 @@ class HandlerClass(object):
         self._planner.set_parameters(time_limit=self._params['time_limit'],
                                      compute_velocities=self._params['compute_velocities'],
                                      com_center_weight=self._params['com_center_weight'],
-                                     pos_reach_weight=self._params['position_reachability_weight'],
-                                     f01_parallelism_weight=self._params['reachability_f01_parallelism'],
-                                     grasp_symmetry_weight=self._params['reachability_grasp_symmetry'],
-                                     grasp_flatness_weight=self._params['reachability_grasp_flatness'],
-                                     f2_centralism_weight=self._params['reachability_f2_centralism_weight'],
                                      hfts_generation_params=hfts_gen_params,
                                      b_force_new_hfts=self._params['force_new_hfts'],
                                      min_iterations=self._params['min_iterations'],
@@ -240,7 +235,8 @@ class HandlerClass(object):
                                      free_space_weight=self._params['free_space_weight'],
                                      connected_space_weight=self._params['connected_space_weight'],
                                      max_num_hierarchy_descends=self._params['max_num_hierarchy_descends'],
-                                     use_approximates=self._params['use_approximates'])
+                                     use_approximates=self._params['use_approximates'],
+                                     vel_factor=self._params['velocity_factor'])
         response = PlanGraspMotionResponse()
         obj_id = request.object_identifier
         model_id = request.model_identifier
@@ -278,7 +274,10 @@ class HandlerClass(object):
         if start_configuration is None:
             response.planning_success = False
             return response
-        traj = self._planner.plan_arm_motion(target_pose, start_configuration)
+        grasped_object = request.grasped_object
+        if len(grasped_object) == 0:
+            grasped_object = None
+        traj = self._planner.plan_arm_motion(target_pose, start_configuration, grasped_object=grasped_object)
         if traj is not None:
             response.trajectory = self.convert_trajectory(traj, arm_only=True)
             response.planning_success = True

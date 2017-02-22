@@ -58,11 +58,6 @@ class HandlerClass(object):
         self._planner.set_parameters(max_iters=self._params['num_hfts_iterations'],
                                      reachability_weight=self._params['reachability_weight'],
                                      com_center_weight=self._params['com_center_weight'],
-                                     f01_parallelism_weight=self._params['reachability_f01_parallelism'],
-                                     grasp_symmetry_weight=self._params['reachability_grasp_symmetry'],
-                                     grasp_flatness_weight=self._params['reachability_grasp_flatness'],
-                                     f2_centralism_weight=self._params['reachability_f2_centralism_weight'],
-                                     pos_reach_weight=self._params['position_reachability_weight'],
                                      hfts_generation_params=hfts_gen_params,
                                      b_force_new_hfts=self._params['force_new_hfts'])
         # We always start from the root node, so create a root node

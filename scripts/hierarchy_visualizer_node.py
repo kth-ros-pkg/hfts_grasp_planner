@@ -175,12 +175,18 @@ class GUIThread(Thread):
     def join(self):
         Gtk.main_quit()
 
-def main():
+def main2():
     rospy.init_node('FreeSpaceProximitySamplerVisualizerServer')
+    Gdk.threads_init()
+    app = GUI()
+    Gtk.main()
+
+def main():
+    Gdk.threads_init()
     app = GUI()
     while not rospy.is_shutdown() and not app.terminated:
         Gtk.main_iteration()
-        rospy.sleep(0.01)
+        rospy.sleep(0.1)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main2())

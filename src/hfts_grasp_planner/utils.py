@@ -50,7 +50,9 @@ class ObjectFileIO(ObjectIO):
         self._last_hfts_param = None
         self._last_obj_com = None
 
-    def get_points(self, obj_id):
+    def get_points(self, obj_id, b_filter=None):
+        if b_filter is None:
+            b_filter = self._b_var_filter
         obj_file = self._data_path + '/' + obj_id + '/objectModel'
         file_extension = self.get_obj_file_extension(obj_id)
         points = None
@@ -59,7 +61,7 @@ class ObjectFileIO(ObjectIO):
         elif file_extension == '.stl':
             points = read_stl_file(obj_file + file_extension)
         if points is not None:
-            if self._b_var_filter:
+            if b_filter:
                 points = filter_points(points, self._hfts_generation_params)
         else:
             rospy.logerr('[ObjectFileIO] Failed to load mesh from ' + str(file_extension) +
@@ -496,6 +498,12 @@ class OpenRAVEDrawer:
         if color is None:
             color = [1, 0, 0, 1]
         self.handles.append(self.or_env.drawarrow(point, point + length * dir, width, color))
+
+    def draw_pose(self, transform_matrix):
+        for i in range(3):
+            color = [0, 0, 0, 1]
+            color[i] = 1
+            self.draw_arrow(transform_matrix[:3, 3], transform_matrix[:3, i], color=color)
 
     def draw_bounding_box(self, abb, color=[0.3, 0.3, 0.3], width=1.0):
         position = abb.pos()
