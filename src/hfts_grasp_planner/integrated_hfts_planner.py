@@ -178,6 +178,7 @@ class IntegratedHFTSPlanner(object):
         else:
             def debug_function(forward_tree, backward_trees):
                 pass
+        self._robot.SetDOFValues(start_configuration)
         self._last_path = self._rrt_planner.proximity_birrt(start_configuration, time_limit=self._time_limit,
                                                             debug_function=debug_function)
         grasp_pose = None

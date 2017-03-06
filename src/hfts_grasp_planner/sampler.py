@@ -380,7 +380,6 @@ class FreeSpaceProximityHierarchyNode(object):
         self._T_c = 0.0
         self._T_p = 0.0
         self._num_leaves_in_branch = 1 if goal_node.is_leaf() else 0
-        self._num_times_sampled = 0
         self._active_children_capacity = active_children_capacity
         self._configs = []
         self._configs.append(None)
@@ -589,12 +588,6 @@ class FreeSpaceProximityHierarchyNode(object):
         self._goal_nodes.append(sample.hierarchy_info)
         self._configs_registered.append(not sample.is_valid())
 
-    def sampled(self):
-        self._num_times_sampled += 1
-
-    def get_num_times_sampled(self):
-        return self._num_times_sampled
-
 
 class FreeSpaceProximitySampler(object):
     def __init__(self, goal_sampler, c_free_sampler, k=4, num_iterations=10,
@@ -680,7 +673,6 @@ class FreeSpaceProximitySampler(object):
         if label in self._label_cache:
             hierarchy_node = self._label_cache[label]
             hierarchy_node.add_goal_sample(goal_sample)
-            # TODO this should not be happening. the label_cache should prevent this
             logging.warn('[FreeSpaceProximitySampler::_getHierarchyNode] Sampled a cached node!')
         else:
             hierarchy_node = FreeSpaceProximityHierarchyNode(goal_node=goal_sample.hierarchy_info,
@@ -752,8 +744,8 @@ class FreeSpaceProximitySampler(object):
         #     print "WTF Assertion fail here"
         #     import IPython
         #     IPython.embed()
-        #TODO this assertion failed. This indicates a serious bug!
-        # assert (node.is_valid() and max_temp >= self._free_space_weight) or not node.is_valid()
+        #TODO this assertion failed once. This indicates a serious bug, but did not manage to reproduce it!
+        assert not node.is_valid() or max_temp >= self._free_space_weight
         return node.get_t()
 
     def _T(self, node):
@@ -854,13 +846,14 @@ class FreeSpaceProximitySampler(object):
                                                              label_cache=children_contact_labels,
                                                              post_opt=do_post_opt)
         if goal_sample.hierarchy_info.is_goal() and goal_sample.hierarchy_info.is_valid():
-            logging.debug('[FreeSpaceProximitySampler::_sampleChild] We sampled a goal here!!!')
-        if goal_sample.hierarchy_info.is_valid():
+            logging.debug('[FreeSpaceProximitySampler::_sampleChild] We sampled a valid goal here!!!')
+        elif goal_sample.hierarchy_info.is_valid():
             logging.debug('[FreeSpaceProximitySampler::_sampleChild] Valid sample here!')
         (hierarchy_node, b_new) = self._get_hierarchy_node(goal_sample)
         if b_new:
             node.add_child(hierarchy_node)
-        node.sampled()
+        else:
+            assert hierarchy_node.get_unique_label() == node.get_unique_label()
         return hierarchy_node
 
     def is_goal(self, sample):

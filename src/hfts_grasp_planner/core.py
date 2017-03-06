@@ -93,9 +93,6 @@ class HFTSSampler:
         # self._hops = num_hops
         # TODO remove this aga
         self._hops = 2
-        self._pre_gasp_conf = None
-        self._arm_conf = None
-        self._hand_pose_lab = None
         self._robot = None
         self._obj = None
         self._obj_com = None
@@ -133,19 +130,6 @@ class HFTSSampler:
         stability = compute_grasp_stability(grasp_contacts=real_contacts,
                                             mu=self._mu)
         return stability > self._min_stability and self.is_grasp_collision_free()
-
-    def clear_config_cache(self):
-        self._pre_gasp_conf = None
-        self._arm_conf = None
-        self._hand_pose_lab = None
-        shift = transformations.identity_matrix()
-        shift[0,-1] = 0.2
-        self._robot.SetTransform(shift)
-        # Set hand to default (mean) configuration
-        mean_values = map(lambda min_v, max_v: (min_v + max_v) / 2.0,
-                          self._robot.GetDOFLimits()[0],
-                          self._robot.GetDOFLimits()[1])
-        self._robot.SetDOFValues(mean_values, range(len(mean_values)))
 
     def create_object_kd_tree(self, points):
         self._object_kd_tree = KDTree(points[:, :3])
@@ -245,9 +229,15 @@ class HFTSSampler:
         # return s_tmp, r_tmp, o_tmp
         return s_tmp, r_tmp, -r_tmp
 
-    def extend_hfts_node(self, old_labels):
-        for label in old_labels:
-            label.append(np.random.randint(self._branching_factors[len(label)]))
+    def extend_hfts_node(self, old_labels, allowed_finger_combos=None):
+        new_depth = len(old_labels[0])  # a label has length depth + 1
+        if allowed_finger_combos is not None:
+            fingertip_assignments = random.choice(allowed_finger_combos)
+        else:
+            fingertip_assignments = random.choices(self._branching_factors[new_depth], k=self._num_contacts)
+
+        for label, assignment in itertools.izip(old_labels, fingertip_assignments):
+            label.append(assignment)
         s_tmp, r_tmp, o_tmp = self.evaluate_grasp(old_labels)
         # self._debug_visualize(old_labels, 0)
         return o_tmp, old_labels
@@ -296,11 +286,7 @@ class HFTSSampler:
         labels_tmp = []
         if allowed_finger_combos is None:
             for i in range(self._num_contacts):
-                tmp = []
-                # while tmp in labels_tmp or len(tmp) == 0:
-                # TODO what is this loop for? we would never get this result from get_sibling_label
-                while len(tmp) == 0:
-                    tmp = self.get_random_sibling_label(curr_labels[i])
+                tmp = self.get_random_sibling_label(curr_labels[i])
                 labels_tmp.append(tmp)
         else:
             finger_combo = random.choice(allowed_finger_combos)
@@ -386,8 +372,23 @@ class HFTSSampler:
             raise ValueError('HFTSSampler::sample_grasp input node has an invalid depth')
 
         if node.get_depth() + depth_limit >= self._num_levels:
-            depth_limit = self._num_levels - node.get_depth() # cap
+            depth_limit = self._num_levels - node.get_depth()  # cap
 
+        # In case we using the integrated method, we might have a limitation on what nodes to descend to
+        # let's compute this set.
+        allowed_finger_combos = None
+        if label_cache is not None and depth_limit == 1:
+            # TODO This currently only works for hops == 2
+            assert self._hops == 2
+            allowed_finger_combos = self.compute_allowed_contact_combinations(node.get_depth(), label_cache)
+            rospy.logdebug('[HFTSSampler::sample_grasp] We have %i allowed contacts' % len(allowed_finger_combos))
+            if len(allowed_finger_combos) == 0:
+                rospy.logwarn('[HFTSSampler::sample_grasp] We have no allowed contacts left! Aborting.')
+                return node
+        elif depth_limit != 1:
+            raise ValueError('[HFTSSampler::sample_grasp] Label cache only works for depth_limit == 1')
+
+        # Now, get a node to start stochastic optimization from
         seed_ik = None
         if node.get_depth() == 0: # at root
             contact_label = self.pick_new_start_node()
@@ -396,22 +397,12 @@ class HFTSSampler:
             # If we are not at a leaf node, go down in the hierarchy
             seed_ik = node.get_arm_configuration()
             contact_label = copy.deepcopy(node.get_labels())
-            best_o, contact_label = self.extend_hfts_node(contact_label)
+            best_o, contact_label = self.extend_hfts_node(contact_label,
+                                                          allowed_finger_combos=allowed_finger_combos)
 
-        allowed_finger_combos = None
-        if label_cache is not None:
-            # TODO This currently only works for hops == 2
-            assert self._hops == 2
-            allowed_finger_combos = self.compute_allowed_contact_combinations(node.get_depth(), label_cache)
-            rospy.logdebug('[HFTSSampler::sample_grasp] We have %i allowed contacts' % len(allowed_finger_combos))
-            if len(allowed_finger_combos) == 0:
-                rospy.logwarn('[HFTSSampler::sample_grasp] We have no allowed contacts left! Aborting.')
-                return node
-
-        self.clear_config_cache()
+        self.reset_robot()
         depth_limit -= 1
         rospy.logdebug('[HFTSSampler::sample_grasp] Sampling a grasp; %i number of iterations' % self._max_iters)
-
         # Do stochastic optimization until depth_limit is reached
         while depth_limit >= 0:
             # Randomly select siblings to optimize the objective function
@@ -431,14 +422,12 @@ class HFTSSampler:
         # Evaluate grasp on robot hand
         # First, determine a hand configuration and the contact locations
         grasp_conf, object_contacts, hand_contacts = self.compose_grasp_info(contact_label)
-        # if post_opt:
-        #     rospy.logdebug('[HFTSSampler::sample_grasp] Doing post optimization for node %s' % str(contact_label))
-        # Compute grasp quality (a combination of stability, reachability and collision conditions)
-        # try:
+        # Simulate the grasp and do local adjustments
         b_robotiq_ok, grasp_conf, grasp_pose = self.simulate_grasp(grasp_conf=grasp_conf,
                                                                    hand_contacts=hand_contacts,
                                                                    object_contacts=object_contacts,
-                                                                   post_opt=post_opt)
+                                                                   post_opt=post_opt,
+                                                                   swap_contacts=label_cache is None)
         if b_robotiq_ok:
             sample_q = 0
             stability = best_o
@@ -528,10 +517,10 @@ class HFTSSampler:
             return True, self._robot.GetDOFValues(), self._robot.GetTransform()
         return False, self._robot.GetDOFValues(), self._robot.GetTransform()
 
-    def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False):
+    def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False, swap_contacts=True):
         # TODO this method as it is right now is only useful for the Robotiq hand.
         b_grasp_valid, grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
-        if not b_grasp_valid:
+        if not b_grasp_valid and swap_contacts:
             self.swap_contacts([0, 1], object_contacts)
             b_grasp_valid, grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
         return b_grasp_valid, grasp_conf, grasp_pose
@@ -541,6 +530,16 @@ class HFTSSampler:
         frm = rows[0]
         to = rows[1]
         object_contacts[[frm, to], :] = object_contacts[[to, frm], :]
+
+    def reset_robot(self):
+        shift = transformations.identity_matrix()
+        shift[0, -1] = 0.2
+        self._robot.SetTransform(shift)
+        # Set hand to default (mean) configuration
+        mean_values = map(lambda min_v, max_v: (min_v + max_v) / 2.0,
+                          self._robot.GetDOFLimits()[0],
+                          self._robot.GetDOFLimits()[1])
+        self._robot.SetDOFValues(mean_values, range(len(mean_values)))
 
     def pick_new_start_node(self):
         num_nodes_top_level = self._branching_factors[0]
