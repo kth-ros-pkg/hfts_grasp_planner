@@ -1,0 +1,9 @@
+<KinBody name="table">
+    <Body type="dynamic">
+        <Geom type="box">
+            <extents>0.75 0.4 0.51</extents>
+            <transparency>0</transparency>
+            <translation>0.0 0.0 0.515</translation>
+        </Geom>
+    </Body>
+</KinBody>

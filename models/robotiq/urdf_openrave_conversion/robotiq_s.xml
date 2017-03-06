@@ -1,8 +1,14 @@
 <Robot name="Robotiq-S-Hand">
     <KinBody>
+        <Body name="robotiq_socket" type="dynamic">
+                <Translation>0 0 0</Translation>
+                <quat> 1 0 0 0 </quat>
+        </Body>
         <Body name="palm" type="dynamic">
-            <Translation> 0 0 0</Translation>
-            <quat>0 0 0 1</quat>
+            <!-- <offsetfrom>robotiq_socket</offsetfrom> -->
+            <Translation> 0 0 0.046</Translation>
+            <!-- <quat>0.7071 0.7071 0 0</quat> -->
+            <quat>0.0 0.0 0.7071 0.7071</quat>
             <Geom type="trimesh">
                 <render>meshes/visual/palm.dae</render>
                 <!-- <collision>meshes/collision/palm.dae</collision> -->
@@ -156,9 +162,15 @@
                 <quat>0.96639 0.00000 0.00000 0.25708</quat>
             </Geom>
         </Body>
+        <!-- =========== Dummy Joint between socket and palm ========== -->
+        <Joint name="root_joint" type="hinge" enable="false">
+            <Body>robotiq_socket</Body>
+            <Body>palm</Body>
+            <limits>0.0 0.0</limits>
+        </Joint>
         <!-- ==================== Finger 1 Joints ==================== -->
         <Joint name="JF10" type="hinge" enable="false"
-            mimic_pos="-JF20" mimic_vel="-|JF20 1">
+            mimic_pos="-scissor_joint" mimic_vel="-|scissor_joint 1">
             <Body>palm</Body>
             <Body>finger_1_link_0</Body>
             <offsetfrom>finger_1_link_0</offsetfrom>
@@ -190,7 +202,7 @@
             <limits>-1.2217 -0.0523</limits>
         </Joint>
         <!-- =============== Finger 2 Joints ================= -->
-        <Joint name="JF20" type="hinge">
+        <Joint name="scissor_joint" type="hinge">
             <Body>palm</Body>
             <Body>finger_2_link_0</Body>
             <offsetfrom>finger_2_link_0</offsetfrom>
@@ -198,7 +210,7 @@
             <limits>-0.192 0.1784</limits>
         </Joint>
         <!-- We have a virtual joint here that governs how the finger bends. -->
-        <Joint name="JF2V" type="hinge">
+        <Joint name="finger_2_joint_1" type="hinge">
             <Body>finger_2_link_0</Body>
             <Body>finger_2_link_v</Body>
             <offsetfrom>finger_2_link_1</offsetfrom>
@@ -206,8 +218,8 @@
             <limits>0.0495 2.7926</limits>
         </Joint>
         <Joint name="JF21" type="hinge" enable="false"
-            mimic_pos="(JF2V &lt; 1.2218) * JF2V + (JF2V &gt;= 1.2218) * 1.2218"
-            mimic_vel="|JF2V (JF2V &lt; 1.2218) * 1 + (JF2V &gt;= 1.2218) * 0">
+            mimic_pos="(finger_2_joint_1 &lt; 1.2218) * finger_2_joint_1 + (finger_2_joint_1 &gt;= 1.2218) * 1.2218"
+            mimic_vel="|finger_2_joint_1 (finger_2_joint_1 &lt; 1.2218) * 1 + (finger_2_joint_1 &gt;= 1.2218) * 0">
             <Body>finger_2_link_0</Body>
             <Body>finger_2_link_1</Body>
             <offsetfrom>finger_2_link_1</offsetfrom>
@@ -215,8 +227,8 @@
             <limits>0.0495 1.2218</limits>
         </Joint>
         <Joint name="JF22" type="hinge" enable="false"
-            mimic_pos="(JF2V &gt;= 1.2218) * min(1.5708, JF2V - 1.2218)"
-            mimic_vel="|JF2V (JF2V &gt;= 1.2218) * (JF2V - 1.2218 &lt; 1.5708)">
+            mimic_pos="(finger_2_joint_1 &gt;= 1.2218) * min(1.5708, finger_2_joint_1 - 1.2218)"
+            mimic_vel="|finger_2_joint_1 (finger_2_joint_1 &gt;= 1.2218) * (finger_2_joint_1 - 1.2218 &lt; 1.5708)">
             <Body>finger_2_link_1</Body>
             <Body>finger_2_link_2</Body>
             <offsetfrom>finger_2_link_2</offsetfrom>
@@ -224,8 +236,8 @@
             <limits>0.0 1.5708</limits>
         </Joint>
         <Joint name="JF23" type="hinge" enable="false"
-            mimic_pos="min(max(-JF2V, -1.2217), -0.0523)"
-            mimic_vel="|JF2V -(JF2V &gt;= -1.2217)*(JF2V &lt;= -0.0523)">
+            mimic_pos="min(max(-finger_2_joint_1, -1.2217), -0.0523)"
+            mimic_vel="|finger_2_joint_1 -(finger_2_joint_1 &gt;= -1.2217)*(finger_2_joint_1 &lt;= -0.0523)">
             <Body>finger_2_link_2</Body>
             <Body>finger_2_link_3</Body>
             <offsetfrom>finger_2_link_3</offsetfrom>

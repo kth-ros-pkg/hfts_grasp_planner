@@ -1,0 +1,13 @@
+# Request - Adds an object to the planning scene. If the object already exists,
+# it is moved to the specified pose.
+# A unique identifier for the object
+string object_identifier
+# The name of the class of the object. This is used as a key for querying for
+# a geometric model in the database.
+string class_identifier
+# The pose of the new object.
+geometry_msgs/PoseStamped pose
+---
+# Result
+# Bool that indicates whether the object was successfully added
+bool success

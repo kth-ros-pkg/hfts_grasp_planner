@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/kwr_robotiq/kwr_robotiq.xml"/>
+    <KinBody name="beckhoff">
+        <Translation>0.76 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../beckhoff_el2809/objectModel.stl</Data>
+                <Render>../beckhoff_el2809/objectModel.stl</Render>
+            </Geom>
+        </Body>
+   </KinBody>
+    <KinBody name="finder_dimmer">
+        <Translation>0.66 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../finder_dimmer/objectModel.stl</Data>
+                <Render>../finder_dimmer/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="fusebox">
+        <Translation>0.56 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../fusebox/objectModel.stl</Data>
+                <Render>../fusebox/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="hager_cda">
+        <Translation>0.46 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../hager_cda/objectModel.stl</Data>
+                <Render>../hager_cda/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="r100h">
+        <Translation>0.36 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../r100h/objectModel.stl</Data>
+                <Render>../r100h/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="schuko">
+        <Translation>0.16 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../schuko/objectModel.stl</Data>
+                <Render>../schuko/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="single_fuse">
+        <Translation>0.06 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../single_fuse/objectModel.stl</Data>
+                <Render>../single_fuse/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="timer">
+        <Translation>-0.06 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../timer/objectModel.stl</Data>
+                <Render>../timer/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="weidmueller_power_supply">
+        <Translation>-0.16 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../weidmueller_power_supply/objectModel.stl</Data>
+                <Render>../weidmueller_power_supply/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="crayola">
+        <Translation>-0.16 0.78 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../crayola/objectModel.ply</Data>
+                <Render>../crayola/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="bunny">
+        <Translation>-0.16 0.78 1.5</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../bunny/objectModel.ply</Data>
+                <Render>../bunny/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+</Environment>

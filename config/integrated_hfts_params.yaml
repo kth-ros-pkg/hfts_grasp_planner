@@ -1,0 +1,29 @@
+visualize_grasps: False
+visualize_system: True
+visualize_hfts: False
+show_trajectory: False
+show_search_tree: False
+p_goal_max: 0.8
+p_goal_w: 1.2
+p_goal_min: 0.01
+min_iterations: 20
+max_iterations: 70
+environment_file_name: data/environments/test_env.xml
+hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
+hand_cache_file: data/cache/robotiq_hand.npy
+robot_name: kmr_iiwa_robotiq
+manipulator_name: arm_with_robotiq
+free_space_weight: 0.5
+connected_space_weight: 4.0
+num_hfts_samplings_steps: -1
+use_approximates: True
+time_limit: 600
+joint_state_topic: /kmr/hand_arm_joint_states
+joint_names_mapping:
+  iiwa.joint0: lbrAxis1
+  iiwa.joint1: lbrAxis2
+  iiwa.joint2: lbrAxis3
+  iiwa.joint3: lbrAxis4
+  iiwa.joint4: lbrAxis5
+  iiwa.joint5: lbrAxis6
+  iiwa.joint6: lbrAxis7

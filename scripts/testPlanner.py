@@ -55,12 +55,12 @@ if __name__ == "__main__":
     rootHFTSNode = HFTSNode()
     planner = graspSampler(vis=True)
     handFile = packPath + rospy.get_param('/handFile')
-    planner.loadHand(handFile)
-    planner.loadObj(packPath + '/data', objFile)
+    planner.load_hand(handFile)
+    planner.load_object(packPath + '/data', objFile)
     finished = False
     while not finished:
-        retNode = planner.sampleGrasp(rootHFTSNode, 5)
-        finished = retNode.isGoal()
+        retNode = planner.sample_grasp(rootHFTSNode, 5)
+        finished = retNode.is_goal()
         rospy.sleep(0.2)
     
     rospy.spin()

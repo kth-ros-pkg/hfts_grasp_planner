@@ -7,6 +7,7 @@ project(hfts_grasp_planner)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
+  dynamic_reconfigure
   std_msgs
   geometry_msgs
   trajectory_msgs
@@ -59,6 +60,9 @@ add_service_files(
   FILES
   PlanGrasp.srv
   PlanGraspMotion.srv
+  AddObject.srv
+  RemoveObject.srv
+  PlanArmMotion.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -92,10 +96,10 @@ generate_messages(
 ##     and list every .cfg file to be processed
 
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
+generate_dynamic_reconfigure_options(
+   cfg/integrated_hfts_planner.cfg
+   cfg/hfts_planner.cfg
+)
 
 ###################################
 ## catkin specific configuration ##

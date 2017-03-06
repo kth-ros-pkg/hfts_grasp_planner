@@ -1,0 +1,16 @@
+# Request
+# End-effector pose to move the arm to
+geometry_msgs/PoseStamped target_pose
+# (Optional) The start configuration of the arm and the hand.
+#            If not provided, the current configuration is used as start configuration.
+sensor_msgs/JointState start_configuration
+# (Optional) If there is an object grasped, you can specify it here so that
+#            collisions between it and the robot are ignored and collision with it
+#            the environment are prevented.
+string grasped_object
+---
+# Result
+# Bool that indicates planning success.
+bool planning_success
+# A hand-arm trajectory that moves the end-effector into a grasping configuration.
+trajectory_msgs/JointTrajectory trajectory
