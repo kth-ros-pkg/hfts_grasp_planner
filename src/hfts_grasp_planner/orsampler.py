@@ -3,7 +3,6 @@
 """ This script contains an OpenRAVE based arm configuration space sampler """
 
 import numpy
-import IPython
 import random
 import openravepy as orpy
 import logging

@@ -3,7 +3,6 @@
 """This module contains a wrapper class of the HFTS Grasp Sampler."""
 
 from hfts_grasp_planner.core import HFTSSampler, HFTSNode
-from utils import ObjectFileIO
 from sampler import SamplingResult
 import logging
 import numpy

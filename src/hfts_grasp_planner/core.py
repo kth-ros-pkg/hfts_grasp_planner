@@ -3,7 +3,6 @@
 import numpy as np
 import math
 from scipy.spatial import KDTree
-
 import openravepy as orpy
 import transformations
 from robotiqloader import RobotiqHand, InvalidTriangleException

@@ -1,5 +1,4 @@
 import string
-
 import openravepy as orpy
 import logging
 import numpy

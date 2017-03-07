@@ -9,7 +9,6 @@ import rospy
 from sklearn.cluster import KMeans as KMeans
 import math, copy, os, itertools
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 from sklearn.neighbors import KDTree
 from stl import mesh as stl_mesh_module
 from abc import ABCMeta, abstractmethod
