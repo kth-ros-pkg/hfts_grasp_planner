@@ -194,4 +194,4 @@ If no joint states are published, a planning request always needs to specify the
 
 ##### Dynamic configuration
 There are several parameters additional that can be dynamically reconfigured. See
-*hfts_grasp_planner/cfg/hfts_planner.cfg* for details.
+*hfts_grasp_planner/cfg/integrated_hfts_planner.cfg* for details.
