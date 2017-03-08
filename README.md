@@ -29,7 +29,7 @@ The *hfts_integrated_planner_node* provides an integrated grasp and motion plann
 whereas the *hfts_planner_node* provides only a grasp planning algorithm.
 For both nodes there are launch files available.
 
-#### How to use and launch hfts_planner_node
+### How to use and launch hfts_planner_node
 The launch file 'start_hfts_planner.launch' starts the *hfts_planner_node* and loads default 
 parameters to the ROS parameter server. The default parameters can be modified in 
 ```shell
@@ -59,7 +59,7 @@ As a response you should receive a message containing a
 hand pose relative to the object frame and a hand configuration.
 See the service definition in *hfts_grasp_planner/srv/PlanGrasp.srv* for more details.
 
-#### How to use and launch hfts_integrated_planner_node
+### How to use and launch hfts_integrated_planner_node
 The launch file 'start_integrated_hfts_planner.launch' launches
 the *hfts_integrated_planner_node* and loads default 
 parameters to the ROS parameter server. 
@@ -119,7 +119,7 @@ not likely to change while a node is running are set on the ROS parameter server
 Parameters that directly affect the performance of the algorithms that a user
 may want to change without restarting the node can be set using [*dynamic reconfigure*](http://wiki.ros.org/dynamic_reconfigure).
 
-####Configuring hfts_planner_node
+###Configuring hfts_planner_node
 The parameters read by the *hfts_planner_node* from the parameter server are the following:
 ```yamlex
 visualize: True
@@ -134,12 +134,12 @@ and filenames. These paths need to be relative to the package. In case of *hand_
 grasp planning. In case of *hand_cache_file* the file is used by the node to store hand-specific data in. 
 In other words, you should change this parameter to a new filename whenever you select a new *hand_file*.
 
-##### Dynamic configuration
+#### Dynamic configuration
 There are several additional parameters that can be dynamically reconfigured. See
 *hfts_grasp_planner/cfg/hfts_planner.cfg* for details.
 
 
-####Configuring hfts_integrated_planner_node
+### Configuring hfts_integrated_planner_node
 The parameters read by the *hfts_integrated_planner_node* from the parameter server are the following:
 ```yamlex
 visualize_grasps: False
@@ -192,6 +192,6 @@ The parameter *joint_names_mapping* is optional and may define a mapping from jo
 published on *joint_state_topic* to the joint names used in the OpenRAVE model.
 If no joint states are published, a planning request always needs to specify the start configuration.
 
-##### Dynamic configuration
+#### Dynamic configuration
 There are several parameters additional that can be dynamically reconfigured. See
 *hfts_grasp_planner/cfg/integrated_hfts_planner.cfg* for details.
