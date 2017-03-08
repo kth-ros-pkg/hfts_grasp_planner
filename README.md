@@ -24,13 +24,13 @@ git clone https://github.com/kth-ros-pkg/hfts_grasp_planner
 cd .. && catkin_make
 ```
 ## How to run
-This repository contains two relevant ROS nodes: hfts_integrated_planner_node and hfts_planner_node.
-The hfts_integrated_planner_node provides an integrated grasp and motion planning algorithm
-whereas the hfts_planner_node provides only a grasp planning algorithm.
+This repository contains two relevant ROS nodes: *hfts_integrated_planner_node* and *hfts_planner_node*.
+The *hfts_integrated_planner_node* provides an integrated grasp and motion planning algorithm
+whereas the *hfts_planner_node* provides only a grasp planning algorithm.
 For both nodes there are launch files available.
 
-#### How to use launch hfts_planner
-The launch file 'start_hfts_planner.launch' starts the hfts_planner node and loads default 
+#### How to use and launch hfts_planner_node
+The launch file 'start_hfts_planner.launch' starts the *hfts_planner_node* and loads default 
 parameters to the ROS parameter server. The default parameters can be modified in 
 ```shell
 rosed $YOUR_CATKIN_WS/src/hfts_grasp_planner/config/testParams.yaml
@@ -57,10 +57,11 @@ point_cloud:
 ```
 As a response you should receive a message containing a
 hand pose relative to the object frame and a hand configuration.
+See the service definition in *hfts_grasp_planner/srv/PlanGrasp.srv* for more details.
 
-#### How to use launch hfts_integrated_planner_node
+#### How to use and launch hfts_integrated_planner_node
 The launch file 'start_integrated_hfts_planner.launch' launches
-the hfts_integrated_planner_node and loads default 
+the *hfts_integrated_planner_node* and loads default 
 parameters to the ROS parameter server. 
 The default parameters can be modified in 
 ```shell
@@ -105,6 +106,92 @@ object_pose:
 ```
 If planning a grasp was succesful, you should receive a message containing
 a hand-arm path/trajectory to a grasping configuration and some additional information.
+See the service definition in *hfts_grasp_planner/srv/PlanGraspMotion.srv*
+for more details.
+
+The planning scene can be modified using the services */hfts_integrated_grasp_planner_node/add_object* and
+*/hfts_integrated_grasp_planner_node/remove_object*. Again, please consult the service definitions in *hfts_grasp_planner/srv/AddObject.srv*
+and *hfts_grasp_planner/srv/RemoveObject.srv* for more details.
 
 ##Configuration 
-**TODO**
+Both nodes can be configured in different ways. Parameters that are required on startup or
+not likely to change while a node is running are set on the ROS parameter server.
+Parameters that directly affect the performance of the algorithms that a user
+may want to change without restarting the node can be set using [*dynamic reconfigure*](http://wiki.ros.org/dynamic_reconfigure).
+
+####Configuring hfts_planner_node
+The parameters read by the *hfts_planner_node* from the parameter server are the following:
+```yamlex
+visualize: True
+hand_cache_file: data/cache/robotiq_hand.npy
+hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
+```
+The parameter *visualize* can either be *True* or *False* and determines whether to show
+a window showing the robotic hand and the target object. If a grasp has been computed, the grasp is shown in the viewer.
+
+The parameters *hand_cache_file* and *hand_file* are tightly coupled. Both parameters are strings containing the path 
+and filenames. These paths need to be relative to the package. In case of *hand_file* the referred file should contain an OpenRAVE model of the robotic hand used for 
+grasp planning. In case of *hand_cache_file* the file is used by the node to store hand-specific data in. 
+In other words, you should change this parameter to a new filename whenever you select a new *hand_file*.
+
+##### Dynamic configuration
+There are several additional parameters that can be dynamically reconfigured. See
+*hfts_grasp_planner/cfg/hfts_planner.cfg* for details.
+
+
+####Configuring hfts_integrated_planner_node
+The parameters read by the *hfts_integrated_planner_node* from the parameter server are the following:
+```yamlex
+visualize_grasps: False
+visualize_system: True
+visualize_hfts: False
+show_trajectory: False
+show_search_tree: False
+hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
+hand_cache_file: data/cache/robotiq_hand.npy
+environment_file_name: data/environments/test_env.xml
+robot_name: kmr_iiwa_robotiq
+manipulator_name: arm_with_robotiq
+joint_state_topic: /kmr/hand_arm_joint_states
+joint_names_mapping:
+  iiwa.joint0: lbrAxis1
+  iiwa.joint1: lbrAxis2
+  iiwa.joint2: lbrAxis3
+  iiwa.joint3: lbrAxis4
+  iiwa.joint4: lbrAxis5
+  iiwa.joint5: lbrAxis6
+  iiwa.joint6: lbrAxis7
+```
+The parameters *visualize_grasps* and *visualize_system* 
+can either be *True* or *False* and determine whether to show
+a window showing the whole environment, i.e. the full robot with its surrounding or
+just a free-floating robotic hand with the target object. Note that at most one flag can be *True* at a time.
+You can not display both at the same time.
+
+The parameters *visualize_hfts* and *show_search_tree* are for debugging purposes.
+In case of *visualize_hfts* the explored grasp search space is published to a ROS topic
+*/hfts_integrated_planner_node/goal_region_graph*. This search space can be visualized using the node 
+*hierarchy_visualizer_node.py*. If the parameter *show_search_tree* and *visualize_system* are *True*, a projection of the BiRRT is shown 
+in the system viewer.
+
+In case the parameter *show_trajectory* is *True*, every trajectory found by the planner will be executed on the simulated 
+robot in OpenRAVE, allowing the user to see the trajectory.
+
+The parameters *hand_cache_file* and *hand_file* are identical to the ones described for *hfts_planner_node*.
+
+The parameter *environment_file_name* must be a path relative to the package to a file containing an OpenRAVE environment.
+This environment needs to contain a robot with the same robotic hand as specified in *hand_file*.
+The name of the robot in this environment must have the name *robot_name*. 
+
+The parameter *manipulator_name* specifies which manipulator of the robot to use for planning.
+
+Finally, the parameters *joint_state_topic* and *joint_names_mapping* serve for synchronization of the robot state.
+The parameter *joint_state_topic* must be the name of a ROS topic on which the current joint states of the robot are published.
+It is assumed that the published joint state contains the joint states for the whole robot, i.e. the arm and the hand.
+The parameter *joint_names_mapping* is optional and may define a mapping from joint names used in the joint states messages
+published on *joint_state_topic* to the joint names used in the OpenRAVE model.
+If no joint states are published, a planning request always needs to specify the start configuration.
+
+##### Dynamic configuration
+There are several parameters additional that can be dynamically reconfigured. See
+*hfts_grasp_planner/cfg/hfts_planner.cfg* for details.
