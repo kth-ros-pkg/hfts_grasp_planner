@@ -79,7 +79,8 @@ class IntegratedHFTSPlanner(object):
             max_num_hierarchy_descends = self._grasp_planner.get_max_depth() + 1
         self._hierarchy_sampler = FreeSpaceProximitySampler(self._grasp_planner, self._cSampler,
                                                             k=max_num_hierarchy_descends,
-                                                            num_iterations=max_iterations, min_num_iterations=min_iterations,
+                                                            num_iterations=max_iterations,
+                                                            min_num_iterations=min_iterations,
                                                             b_return_approximates=use_approximates,
                                                             connected_weight=connected_space_weight,
                                                             free_space_weight=free_space_weight,

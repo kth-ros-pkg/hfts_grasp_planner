@@ -7,7 +7,7 @@ import openravepy as orpy
 import transformations
 from robotiqloader import RobotiqHand, InvalidTriangleException
 import sys, time, logging, copy
-import itertools, random
+import itertools
 from utils import ObjectFileIO, clamp, compute_grasp_stability, normal_distance, position_distance, dist_in_range
 import rospy
 import scipy.optimize
@@ -231,9 +231,11 @@ class HFTSSampler:
     def extend_hfts_node(self, old_labels, allowed_finger_combos=None):
         new_depth = len(old_labels[0])  # a label has length depth + 1
         if allowed_finger_combos is not None:
-            fingertip_assignments = random.choice(allowed_finger_combos)
+            fingertip_assignments = np.random.choice(allowed_finger_combos)
         else:
-            fingertip_assignments = random.choices(self._branching_factors[new_depth], k=self._num_contacts)
+            fingertip_assignments = np.random.choice(self._branching_factors[new_depth],
+                                                     self._num_contacts,
+                                                     replace=True)
 
         for label, assignment in itertools.izip(old_labels, fingertip_assignments):
             label.append(assignment)
@@ -288,7 +290,7 @@ class HFTSSampler:
                 tmp = self.get_random_sibling_label(curr_labels[i])
                 labels_tmp.append(tmp)
         else:
-            finger_combo = random.choice(allowed_finger_combos)
+            finger_combo = np.random.choice(allowed_finger_combos)
             for i in range(self._num_contacts):
                 tmp = list(curr_labels[i])
                 tmp[-1] = finger_combo[i]
@@ -362,6 +364,8 @@ class HFTSSampler:
             self._scene_interface.set_target_object(obj_id)
         self.compute_contact_combinations()
         self._obj_loaded = True
+        import IPython
+        IPython.embed()
 
     def sample_grasp(self, node, depth_limit, post_opt=False, label_cache=None, open_hand_offset=0.1):
         if depth_limit < 0:
@@ -384,7 +388,7 @@ class HFTSSampler:
             if len(allowed_finger_combos) == 0:
                 rospy.logwarn('[HFTSSampler::sample_grasp] We have no allowed contacts left! Aborting.')
                 return node
-        elif depth_limit != 1:
+        elif label_cache is not None and depth_limit != 1:
             raise ValueError('[HFTSSampler::sample_grasp] Label cache only works for depth_limit == 1')
 
         # Now, get a node to start stochastic optimization from
@@ -544,7 +548,7 @@ class HFTSSampler:
         num_nodes_top_level = self._branching_factors[0]
         contact_label = []
         for i in range(self._num_contacts):
-            contact_label.append([random.choice(range(num_nodes_top_level + 1))])
+            contact_label.append([np.random.choice(range(num_nodes_top_level + 1))])
         return contact_label
 
     def plot_clusters(self, contact_labels):

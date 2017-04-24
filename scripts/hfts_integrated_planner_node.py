@@ -221,6 +221,7 @@ class HandlerClass(object):
         rospy.loginfo('Executing planner with parameters: ' + str(self._params))
         hfts_gen_params = {'max_normal_variance': self._params['max_normal_variance'],
                            'min_contact_patch_radius': self._params['min_contact_patch_radius'],
+                           'contact_density': self._params['contact_density'],
                            'max_num_points': self._params['max_num_points'],
                            'position_weight': self._params['hfts_position_weight'],
                            'branching_factor': self._params['hfts_branching_factor'],

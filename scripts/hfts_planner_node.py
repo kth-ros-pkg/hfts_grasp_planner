@@ -50,6 +50,7 @@ class HandlerClass(object):
         self._object_loader._b_var_filter = self._params['hfts_filter_points']
         self._planner.load_object(req.object_identifier)
         hfts_gen_params = {'max_normal_variance': self._params['max_normal_variance'],
+                           'contact_density': self._params['contact_density'],
                            'min_contact_patch_radius': self._params['min_contact_patch_radius'],
                            'max_num_points': self._params['max_num_points'],
                            'position_weight': self._params['hfts_position_weight'],
