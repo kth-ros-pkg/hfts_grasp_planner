@@ -144,7 +144,7 @@ class HFTSSampler:
             forbidden_finger_combos.add(finger_combo)
         # Filter them out
         allowed_finger_combos.difference_update(forbidden_finger_combos)
-        return list(allowed_finger_combos)
+        return np.array(list(allowed_finger_combos))
 
     def compute_contact_combinations(self):
         while len(self._contact_combinations) < self._num_levels:
@@ -231,7 +231,7 @@ class HFTSSampler:
     def extend_hfts_node(self, old_labels, allowed_finger_combos=None):
         new_depth = len(old_labels[0])  # a label has length depth + 1
         if allowed_finger_combos is not None:
-            fingertip_assignments = np.random.choice(allowed_finger_combos)
+            fingertip_assignments = allowed_finger_combos[np.random.randint(allowed_finger_combos.shape[0])]
         else:
             fingertip_assignments = np.random.choice(self._branching_factors[new_depth],
                                                      self._num_contacts,
@@ -290,7 +290,7 @@ class HFTSSampler:
                 tmp = self.get_random_sibling_label(curr_labels[i])
                 labels_tmp.append(tmp)
         else:
-            finger_combo = np.random.choice(allowed_finger_combos)
+            finger_combo = allowed_finger_combos[np.random.randint(allowed_finger_combos.shape[0])]
             for i in range(self._num_contacts):
                 tmp = list(curr_labels[i])
                 tmp[-1] = finger_combo[i]
@@ -364,8 +364,6 @@ class HFTSSampler:
             self._scene_interface.set_target_object(obj_id)
         self.compute_contact_combinations()
         self._obj_loaded = True
-        import IPython
-        IPython.embed()
 
     def sample_grasp(self, node, depth_limit, post_opt=False, label_cache=None, open_hand_offset=0.1):
         if depth_limit < 0:
@@ -384,8 +382,9 @@ class HFTSSampler:
             # TODO This currently only works for hops == 2
             assert self._hops == 2
             allowed_finger_combos = self.compute_allowed_contact_combinations(node.get_depth(), label_cache)
-            rospy.logdebug('[HFTSSampler::sample_grasp] We have %i allowed contacts' % len(allowed_finger_combos))
-            if len(allowed_finger_combos) == 0:
+            rospy.logdebug('[HFTSSampler::sample_grasp] We have %i allowed contacts' %
+                    allowed_finger_combos.shape[0])
+            if allowed_finger_combos.shape[0] == 0:
                 rospy.logwarn('[HFTSSampler::sample_grasp] We have no allowed contacts left! Aborting.')
                 return node
         elif label_cache is not None and depth_limit != 1:
