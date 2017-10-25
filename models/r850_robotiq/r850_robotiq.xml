@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="r850_robotiq">
+ <robot file="kuka-kr5-r850.zae"></robot>
+ <robot file="../robotiq/urdf_openrave_conversion/robotiq_s.xml"></robot>
+ <kinbody>
+   <body name="palm">
+     <offsetfrom>link2</offsetfrom>
+    <translation>0.61 0.0 0.744</translation>
+    <rotationaxis>0 1 0 90</rotationaxis>
+   </body>
+   <joint name="dummy0" type="hinge" enable="false">
+     <body>link6</body>
+     <body>palm</body>
+     <limits>0 0</limits>
+   </joint>
+ </kinbody>
+<manipulator name="arm_with_robotiq">
+    <base>base</base>
+    <effector>robotiq_socket</effector>
+    <joints>scissor_joint finger_2_joint_1</joints>
+    <closingdirection>1 1</closingdirection>
+    <direction>1 0 0</direction>
+</manipulator>
+</robot>

@@ -1,0 +1,11 @@
+visualize_grasps: False
+visualize_system: True
+visualize_hfts: False
+show_trajectory: False
+show_search_tree: False
+environment_file_name: data/environments/test_env_r850.xml
+hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
+hand_cache_file: data/cache/robotiq_hand.npy
+robot_name: r850_robotiq
+manipulator_name: arm_with_robotiq
+joint_state_topic: /r850/hand_arm_joint_states
