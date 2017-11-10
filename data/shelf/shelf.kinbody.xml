@@ -1,0 +1,9 @@
+<KinBody name="shelf">
+    <Body type="static">
+        <RotationAxis>1 0 0 90</RotationAxis>
+        <Geom type="trimesh">
+            <Data>shelf.stl</Data>
+            <Render>shelf.stl</Render>
+        </Geom>
+    </Body>
+</KinBody>

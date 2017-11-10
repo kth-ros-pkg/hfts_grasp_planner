@@ -1,0 +1,24 @@
+#! /usr/bin/python
+
+import rospy
+from sensor_msgs.msg import JointState
+import rospkg
+import argparse
+from hfts_grasp_planner.srv import PlanGraspMotion, PlanGraspMotionRequest
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('object_name', type=str, help='Name of the object to grasp')
+    args = parser.parse_args()
+    rospy.init_node('test_fingertip_grasp_planner')
+    service = rospy.ServiceProxy('/hfts_integrated_planner_node/plan_fingertip_grasp_motion', PlanGraspMotion)
+    
+    request = PlanGraspMotionRequest()
+    request.object_identifier = args.object_name
+    request.model_identifier = args.object_name
+    joint_state = JointState()
+    joint_state.name = ['lbrAxis1', 'lbrAxis2', 'lbrAxis3', 'lbrAxis4', 'lbrAxis5', 'lbrAxis6', 'lbrAxis7',
+    'scissor_joint', 'finger_2_joint_1']
+    joint_state.position = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.2]
+    request.start_configuration = joint_state
+    service(request)

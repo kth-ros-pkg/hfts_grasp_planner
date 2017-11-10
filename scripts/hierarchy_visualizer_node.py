@@ -82,6 +82,7 @@ class GUI(Gtk.Window):
         # color = self.baseColor + vertex['temperature'] / self.maxTemp * (self.hotColor - self.baseColor)
         # color = color * 255
         # return map(int, color)
+        self.max_temp = max(self.max_temp, vertex['temperature'])
         color_code = int(vertex['temperature'] / self.max_temp * 255.0)
         return color_code
 
