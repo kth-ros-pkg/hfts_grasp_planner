@@ -4,6 +4,8 @@
 from __future__ import print_function
 import math
 import time
+import operator
+import itertools
 import skfmm
 import numpy as np
 import openravepy as orpy
@@ -95,19 +97,23 @@ class VoxelGrid(object):
         rel_pos = pos - self._base_pos
         return [int(math.floor(x / self._cell_size)) for x in rel_pos]
 
-    def get_cell_position(self, idx):
+    def get_cell_position(self, idx, b_center=True):
         """
-            Returns the position in R^3 of the center of the voxel with index idx
+            Returns the position in R^3 of the center or min corner of the voxel with index idx
             @param idx - a tuple/list of length 3 (ix, iy, iz) specifying the voxel
-            @return numpy.array representing the center position of the voxel
+            @param b_center - if true, it return the position of the center, else of min corner
+            @return numpy.array representing the center or min corner position of the voxel
         """
-        rel_pos = np.array(idx) * self._cell_size + np.array([self._cell_size / 2.0, self._cell_size / 2.0, self._cell_size / 2.0])
+        rel_pos = np.array(idx) * self._cell_size
+        if b_center:
+            rel_pos += np.array([self._cell_size / 2.0, self._cell_size / 2.0, self._cell_size / 2.0])
         return self._base_pos + rel_pos
 
     def get_cell_value(self, idx):
         """
             Returns the value of the specified cell
         """
+        idx = self.sanitize_idx(idx)
         return self._cells[idx[0], idx[1], idx[2]]
 
     def get_num_cells(self):
@@ -143,13 +149,30 @@ class VoxelGrid(object):
         """
         return self._cell_size
 
+    def sanitize_idx(self, idx):
+        """
+            Ensures that the provided index is a valid index type.
+        """
+        if len(idx) != 3:
+            raise ValueError("Provided index has invalid length (%i)" % len(idx))
+        return map(int, idx)
+
     def set_cell_value(self, idx, value):
         """
             Sets the value of the cell with given index.
             @param idx - tuple (ix, iy, iz)
             @param value - value to set the cell to
         """
+        idx = self.sanitize_idx(idx)
         self._cells[idx[0], idx[1], idx[2]] = value
+
+    def fill(self, min_idx, max_idx, value):
+        """
+            Fills all cells in the block min_idx, max_idx with value
+        """
+        min_idx = self.sanitize_idx(min_idx)
+        max_idx = self.sanitize_idx(max_idx)
+        self._cells[min_idx[0]:max_idx[0], min_idx[1]:max_idx[1], min_idx[2]:max_idx[2]] = value
 
     def get_max_value(self):
         """
@@ -219,6 +242,55 @@ class SDF(object):
     """
         This class provides a workspace signed distance field for a robot in some environment.
     """
+    class BodyManager(object):
+        """
+            Internal helper class for creating binary collision maps
+        """
+        def __init__(self, env, cell_size):
+            """
+                Create a new BodyManager
+                @param env - OpenRAVE environment
+                @param cell_size - size of a cell
+            """
+            self._env = env
+            self._cell_size = cell_size
+            self._bodies = {}
+            self._active_body = None
+
+        def get_body(self, dimensions):
+            """
+                Get a kinbody that covers the given number of cells.
+                @param dimensions - numpy array (wx, wy, wz)
+            """
+            new_active_body = None
+            if tuple(dimensions) in self._bodies:
+                new_active_body = self._bodies[tuple(dimensions)]
+            else:
+                new_active_body = orpy.RaveCreateKinBody(self._env, '')
+                new_active_body.SetName("CollisionCheckBody" + str(dimensions[0]) + str(dimensions[1]) + str(dimensions[2]))
+                physical_dimensions = self._cell_size * dimensions
+                new_active_body.InitFromBoxes(np.array([[0, 0, 0,
+                                                 physical_dimensions[0] / 2.0,
+                                                 physical_dimensions[1] / 2.0,
+                                                 physical_dimensions[2] / 2.0]]),
+                                        True)
+                self._env.AddKinBody(new_active_body)
+                self._bodies[tuple(dimensions)] = new_active_body
+            if new_active_body is not self._active_body and self._active_body is not None:
+                self._active_body.Enable(False)
+                self._active_body.SetVisible(False)
+            self._active_body = new_active_body
+            self._active_body.Enable(True)
+            self._active_body.SetVisible(True)
+            return self._active_body
+
+        def clear(self):
+            for body in self._bodies.itervalues():
+                self._env.Remove(body)
+                body.Destroy()
+            self._bodies = {}
+
+
     def __init__(self, env_path, robot_name=None, manip_name=None):
         """
             Creates a new signed distance field for the specified environment.
@@ -248,7 +320,6 @@ class SDF(object):
         # if not self._manipulator:
         #     raise ValueError('Could not create signed distance field. The robot has no manipulator or the requested manipulator does not exist')
         self._grid = None
-        self._cell_body = None
         self._or_visualization = None
 
     def __del__(self):
@@ -265,20 +336,68 @@ class SDF(object):
             cell.set_value(-1.0)
         else:
             cell.set_value(1.0)
+        self._counter += 1
+        print("Covered %i / %i cells" % (self._counter, reduce(operator.mul, self._grid.get_num_cells())))
 
-    # def _compute_bcm_rec(self, cell_bodies):
-    #     # TODO recursively
-    #     pass
+    def _compute_bcm_rec(self, min_idx, max_idx, body_manager, covered_volume):
+        """
+            Computes a binary collision map recursively.
+            INVARIANT: This function is only called if there is a collision for a box ranging from min_idx to max_idx
+            @param min_idx - numpy array [min_x, min_y, min_z] cell indices
+            @param max_idx - numpy array [max_x, max_y, max_z] cell indices (the box excludes these)
+            @param body_manager - a body manager of type BodyManager
+        """
+        # Base case, we are looking at only one cell
+        if (min_idx + 1 == max_idx).all():
+            self._grid.set_cell_value(min_idx, -1.0)
+            return covered_volume + 1
+        # else we need to split this cell up and see which child ranges are in collision
+        box_size = max_idx - min_idx  # the number of cells along each axis in this box
+        half_sizes = np.zeros((2, 3))
+        half_sizes[0] = map(math.floor, box_size / 2)  # we split this box into 8 children by dividing along each axis
+        half_sizes[1] = box_size - half_sizes[0]  # half_sizes stores the divisions for each axis
+        # now we create the actual ranges for each of the 8 children
+        children_dimensions = itertools.product(half_sizes[:, 0], half_sizes[:, 1], half_sizes[:, 2])
+        # and the position offsets
+        offset_matrix = np.zeros((2, 3))
+        offset_matrix[1] = half_sizes[0]
+        rel_min_indices = itertools.product(offset_matrix[:, 0], offset_matrix[:, 1], offset_matrix[:, 2])
+        for (rel_min_idx, child_dim) in itertools.izip(rel_min_indices, children_dimensions):
+            volume = reduce(operator.mul, child_dim)
+            if volume != 0:
+                child_min_idx = min_idx + np.array(rel_min_idx)
+                child_max_idx = child_min_idx + np.array(child_dim)
+                child_physical_dimensions = self._grid.get_cell_size() * np.array(child_dim)
+                cell_body = body_manager.get_body(np.array(child_dim))
+                transform = cell_body.GetTransform()
+                transform[0:3, 3] = self._grid.get_cell_position(child_min_idx, b_center=False)
+                transform[0:3, 3] += child_physical_dimensions / 2.0  # the center of our big box
+                cell_body.SetTransform(transform)
+                if self._env.CheckCollision(cell_body):
+                    covered_volume = self._compute_bcm_rec(child_min_idx, child_max_idx, body_manager, covered_volume)
+                else:
+                    self._grid.fill(child_min_idx, child_max_idx, 1.0)
+                    covered_volume += volume
+        # total_volme = reduce(operator.mul, self._grid.get_num_cells())
+        # print("Covered %i / %i cells" % (covered_volume, total_volme))
+        return covered_volume
 
     def _compute_bcm(self):
         # compute for each cell whether it collides with anything
-        cell_size = self._grid.get_cell_size()
-        self._cell_body = orpy.RaveCreateKinBody(self._env, '')
-        self._cell_body.SetName("CellBody")
-        self._cell_body.InitFromBoxes(np.array([[0, 0, 0, cell_size / 2.0, cell_size / 2.0, cell_size / 2.0]]), True)
-        self._env.AddKinBody(self._cell_body)
         self._robot.Enable(False)
-        map(self._check_cell_collision, self._grid)
+        # self._cell_body = orpy.RaveCreateKinBody(self._env, '')
+        # self._cell_body.SetName("CollisionCheckBody")
+        # self._env.AddKinBody(self._cell_body)
+        # self._counter = 0
+        # map(self._check_cell_collision, self._grid)
+        body_manager = SDF.BodyManager(self._env, self._grid.get_cell_size())
+        self._compute_bcm_rec(np.array([0, 0, 0]), self._grid.get_num_cells(), body_manager, 0)
+        self._robot.Enable(True)
+        body_manager.clear()
+        # Finally remove the collision body we used again
+        # self._env.Remove(self._cell_body)
+        # self._cell_body.Destroy()
+        # self._cell_body = None
 
     def _compute_sdf(self):
         # TODO find a good solution for the problem that we get an exception if there are no collisions at all
@@ -303,10 +422,6 @@ class SDF(object):
         start_time = time.time()
         self._compute_sdf()
         print ('Computation of sdf took %f s' % (time.time() - start_time))
-        self._robot.Enable(True)
-        self._env.Remove(self._cell_body)
-        self._cell_body.Destroy()
-        self._cell_body = None
 
     def visualize(self, safe_distance=None):
         """
