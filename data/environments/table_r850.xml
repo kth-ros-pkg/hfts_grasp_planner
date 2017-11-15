@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Environment>
+    <Robot file="../../models/r850_robotiq/r850_robotiq.xml"/>
+ 
+    <KinBody name="floor">
+      <Translation>0.3   0.0   -0.5</Translation>
+      <Body type="static">
+        <Geom type="box">
+          <extents>1 1.5 0.005</extents>
+          <diffuseColor>.6 .6 .6</diffuseColor>
+            <ambientColor>0.6 0.6 0.6</ambientColor>
+        </Geom>
+      </Body>
+    </KinBody>
+
+    <KinBody name="wall">
+      <Translation>-0.7   0.0   0.5</Translation>
+      <Body type="static">
+        <Geom type="box">
+          <extents>0.005 1.5 1.</extents>
+          <diffuseColor>.6 .6 .6</diffuseColor>
+            <ambientColor>0.6 0.6 0.6</ambientColor>
+        </Geom>
+      </Body>
+    </KinBody>
+
+    <KinBody name="base">
+      <!-- <Translation>-0.13   0.0   -0.25</Translation>  -->
+      <Translation>-0.13   -0.0375   -0.27</Translation> 
+      <Body type="static">
+        <Geom type="box">
+          <extents>0.45 0.275 0.25</extents>
+          <diffuseColor>.6 .6 .6</diffuseColor>
+            <ambientColor>0.6 0.6 0.6</ambientColor>
+        </Geom>
+      </Body>
+    </KinBody>
+
+    <KinBody name="table">
+      <Translation>0.0   0.58   -0.275</Translation>
+      <Body type="static">
+        <Geom type="box">
+          <extents>0.35 0.35 0.225</extents>
+          <diffuseColor>.0 .6 .1</diffuseColor>
+            <ambientColor>0.0 0.6 0.1</ambientColor>
+        </Geom>
+      </Body>
+    </KinBody>
+
+    <KinBody name="beckhoff">
+        <Translation>0.76 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../beckhoff_el2809/objectModel.stl</Data>
+                <Render>../beckhoff_el2809/objectModel.stl</Render>
+            </Geom>
+        </Body>
+   </KinBody>
+    <KinBody name="finder_dimmer">
+        <Translation>0.66 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../finder_dimmer/objectModel.stl</Data>
+                <Render>../finder_dimmer/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="fusebox">
+        <Translation>0.56 0.58 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../fusebox/objectModel.stl</Data>
+                <Render>../fusebox/objectModel.stl</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="crayola">
+        <Translation>-0.16 0.78 1.0</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../crayola/objectModel.ply</Data>
+                <Render>../crayola/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+    <KinBody name="bunny">
+        <Translation>-0.16 0.78 1.5</Translation>
+        <Body type="static">
+            <Geom type="trimesh">
+                <Data>../bunny/objectModel.ply</Data>
+                <Render>../bunny/objectModel.ply</Render>
+            </Geom>
+        </Body>
+    </KinBody>
+</Environment> 
