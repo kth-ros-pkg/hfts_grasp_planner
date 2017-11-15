@@ -63,10 +63,9 @@ class VoxelGrid(object):
             @param cell_size - cell size of the voxel grid (in meters)
             @param base_pos - if not None, any query point is shifted by base_pos
         """
-        # TODO there is still a bug here regarding the bse position
         self._cell_size = cell_size
-        self._dimensions = workspace_aabb[3:] - workspace_aabb[:3]
-        self._num_cells = [int(math.ceil(x)) for x in self._dimensions / cell_size]
+        dimensions = workspace_aabb[3:] - workspace_aabb[:3]
+        self._num_cells = np.array([int(math.ceil(x)) for x in dimensions / cell_size])
         self._base_pos = workspace_aabb[:3]
         if base_pos is not None:
             self._base_pos += base_pos
@@ -74,6 +73,28 @@ class VoxelGrid(object):
 
     def __iter__(self):
         return self.get_cell_generator()
+
+    def save(self, file_name):
+        """
+            Saves this grid under the given filename.
+            Note that this function creates multiple files with different endings.
+        """
+        data_file_name = file_name + '.data'
+        meta_file_name = file_name + '.meta'
+        np.save(data_file_name, self._cells)
+        np.save(meta_file_name, np.array([self._base_pos, self._cell_size * self._num_cells]))
+
+    def load(self, file_name):
+        """
+            Loads a grid from the given file.
+        """
+        data_file_name = file_name + '.data.npy'
+        meta_file_name = file_name + '.meta.npy'
+        self._cells = np.load(data_file_name)
+        meta_data = np.load(meta_file_name)
+        self._base_pos = meta_data[0]
+        self._num_cells = np.array(self._cells.shape)
+        self._cell_size = (meta_data[1] / self._num_cells)[0]
 
     def get_index_generator(self):
         """
@@ -106,7 +127,9 @@ class VoxelGrid(object):
         """
         rel_pos = np.array(idx) * self._cell_size
         if b_center:
-            rel_pos += np.array([self._cell_size / 2.0, self._cell_size / 2.0, self._cell_size / 2.0])
+            rel_pos += np.array([self._cell_size / 2.0,
+                                 self._cell_size / 2.0,
+                                 self._cell_size / 2.0])
         return self._base_pos + rel_pos
 
     def get_cell_value(self, idx):
@@ -137,7 +160,8 @@ class VoxelGrid(object):
             @param data - a numpy array with the same shape as returned by get_raw_data()
         """
         if not isinstance(data, np.ndarray):
-            raise ValueError('The type of the provided data is invalid. Must be numpy.ndarray, but it is %s' % str(type(data)))
+            raise ValueError('The type of the provided data is invalid.' +
+                             ' Must be numpy.ndarray, but it is %s' % str(type(data)))
         if data.shape != self._cells.shape:
             raise ValueError("The shape of the provided data differs from this grid's shape." +
                              " Input shape is %s, required shape %s" % (str(data.shape), str(self._cells.shape)))
@@ -210,7 +234,8 @@ class ORVoxelGridVisualization(object):
             is colored with min_color. This behaviour can be changed by providing min_sat_value
             and max_sat_value. If these values are provided, any cell with value <= min_sat_value is
             colored min_color and any cell with value >= max_sat_value is colored with max_color.
-            Cells with values in range (min_sat_value, max_sat_value) are colored using linear interpolation.
+            Cells with values in range (min_sat_value, max_sat_value) are colored
+            using linear interpolation.
 
             @param min_sat_value (optional) - minimal saturation value
             @param max_sat_value (optional) - maximal saturation value
@@ -236,6 +261,12 @@ class ORVoxelGridVisualization(object):
         # and convert true cell size to it
         handle = self._env.plot3(positions, 20, colors)  # size is in pixel
         self._handles.append(handle)
+
+    def clear(self):
+        """
+            Clear visualization
+        """
+        self._handles = []
 
 
 class SDF(object):
@@ -267,13 +298,14 @@ class SDF(object):
                 new_active_body = self._bodies[tuple(dimensions)]
             else:
                 new_active_body = orpy.RaveCreateKinBody(self._env, '')
-                new_active_body.SetName("CollisionCheckBody" + str(dimensions[0]) + str(dimensions[1]) + str(dimensions[2]))
+                new_active_body.SetName("CollisionCheckBody" + str(dimensions[0]) +
+                                        str(dimensions[1]) + str(dimensions[2]))
                 physical_dimensions = self._cell_size * dimensions
                 new_active_body.InitFromBoxes(np.array([[0, 0, 0,
-                                                 physical_dimensions[0] / 2.0,
-                                                 physical_dimensions[1] / 2.0,
-                                                 physical_dimensions[2] / 2.0]]),
-                                        True)
+                                                         physical_dimensions[0] / 2.0,
+                                                         physical_dimensions[1] / 2.0,
+                                                         physical_dimensions[2] / 2.0]]),
+                                              True)
                 self._env.AddKinBody(new_active_body)
                 self._bodies[tuple(dimensions)] = new_active_body
             if new_active_body is not self._active_body and self._active_body is not None:
@@ -285,24 +317,35 @@ class SDF(object):
             return self._active_body
 
         def clear(self):
+            """
+                Remove and destroy all bodies.
+            """
             for body in self._bodies.itervalues():
                 self._env.Remove(body)
                 body.Destroy()
             self._bodies = {}
 
 
-    def __init__(self, env_path, robot_name=None, manip_name=None):
+    def __init__(self, env=None, env_path=None, robot_name=None, manip_name=None):
         """
             Creates a new signed distance field for the specified environment.
+            Note that you either need to provide an openrave environment or a path.
+            @param env - environment to use
             @param env_path - path to the environment
             @param robot_name(optional) - name of the robot
             @param manip_name(optional) - name of the manipulator for which the sdf is created TODO CURRENTLY NOT SUPPORTED
         """
-        self._env = orpy.Environment()
-        b_env_loaded = self._env.Load(env_path)
-        if not b_env_loaded:
-            raise IOError('Could not create signed distance field, because the'
-                          ' environment %s can not be loaded' % env_path)
+        if env is None:
+            self._env = orpy.Environment()
+            if env_path is None:
+                raise ValueError('Could not create signed distance field. You need to either provide an environment' +
+                                 'or a path to an environment.')
+            b_env_loaded = self._env.Load(env_path)
+            if not b_env_loaded:
+                raise IOError('Could not create signed distance field, because the'
+                            ' environment %s can not be loaded' % env_path)
+        else:
+            self._env = env
         if robot_name:
             self._robot = self._env.GetRobot(robot_name)
         else:
@@ -327,17 +370,17 @@ class SDF(object):
             self._env.Destroy()
         self._env = None
 
-    def _check_cell_collision(self, cell):
-        tranform = self._cell_body.GetTransform()
-        tranform[0:3, 3] = cell.get_position()
-        self._cell_body.SetTransform(tranform)
-        b_collision = self._env.CheckCollision(self._cell_body)
-        if b_collision:
-            cell.set_value(-1.0)
-        else:
-            cell.set_value(1.0)
-        self._counter += 1
-        print("Covered %i / %i cells" % (self._counter, reduce(operator.mul, self._grid.get_num_cells())))
+    # def _check_cell_collision(self, cell):
+    #     tranform = self._cell_body.GetTransform()
+    #     tranform[0:3, 3] = cell.get_position()
+    #     self._cell_body.SetTransform(tranform)
+    #     b_collision = self._env.CheckCollision(self._cell_body)
+    #     if b_collision:
+    #         cell.set_value(-1.0)
+    #     else:
+    #         cell.set_value(1.0)
+    #     self._counter += 1
+    #     print("Covered %i / %i cells" % (self._counter, reduce(operator.mul, self._grid.get_num_cells())))
 
     def _compute_bcm_rec(self, min_idx, max_idx, body_manager, covered_volume):
         """
@@ -422,6 +465,38 @@ class SDF(object):
         start_time = time.time()
         self._compute_sdf()
         print ('Computation of sdf took %f s' % (time.time() - start_time))
+
+    def clear_visualization(self):
+        """
+            Clear the visualization of this distance field
+        """
+        self._or_visualization.clear()
+
+    def save(self, file_name):
+        """
+            Save this distance field to a file.
+            Note that this function will create several files with different endings attached to file_name
+            @param file_name - file to store sdf in
+        """
+        grid_file_name = file_name + '.grid'
+        self._grid.save(grid_file_name)
+        with open(file_name + '.meta', 'w') as meta_file:
+            meta_file.write(self._robot.GetName())
+            meta_file.write(';')
+            meta_file.write(grid_file_name)
+
+    def load(self, file_name):
+        """
+            Loads an sdf from file.
+        """
+        with open(file_name + '.meta', 'r') as meta_file:
+            meta_line = meta_file.readline()
+            robot_name, grid_file_name = meta_line.split(';')
+            if self._env.GetRobot(robot_name) is None:
+                raise ValueError('The environment of this sdf does not contain a robot with name ' + robot_name)
+            if self._grid is None:
+                self._grid = VoxelGrid(np.array([0,0,0,0,0,0]))
+            self._grid.load(grid_file_name)
 
     def visualize(self, safe_distance=None):
         """
