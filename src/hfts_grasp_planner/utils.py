@@ -233,7 +233,7 @@ def create_point_cloud(points):
     for point in points:
         point_cloud.points.append(Point32(point[0], point[1], point[2]))
     return point_cloud
-    
+
 
 def vec_angel_diff(v0, v1):
     # in radians
@@ -246,6 +246,17 @@ def vec_angel_diff(v0, v1):
     x = min(1.0, max(-1.0, x)) # fixing math precision error
     angel = math.acos(x)
     return angel
+
+
+def inverse_transform(transform):
+    """
+        Returns the inverse transformation matrix of the given matrix.
+        The given matrix is assumed to be an affine 4x4 transformation matrix (type numpy array)
+    """
+    inv_transform = np.eye(4)
+    inv_transform[:3, :3] = np.transpose(transform[:3, :3])
+    inv_transform[:3, 3] = np.dot(-1.0 * inv_transform[:3, :3], transform[:3, 3])
+    return inv_transform
 
 
 def dist_in_range(d, r):
