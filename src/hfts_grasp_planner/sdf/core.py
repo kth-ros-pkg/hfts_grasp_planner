@@ -4,6 +4,9 @@
 from __future__ import print_function
 import math
 import time
+import yaml
+import logging
+import os
 import operator
 import itertools
 import skfmm
@@ -74,6 +77,7 @@ class VoxelGrid(object):
         self._inv_transform = inverse_transform(self._transform)
         self._cells = np.zeros(self._num_cells)
         self._aabb = workspace_aabb
+        self._homogeneous_point = np.ones(4)
 
     def __iter__(self):
         return self.get_cell_generator()
@@ -84,10 +88,10 @@ class VoxelGrid(object):
             Note that this function creates multiple files with different endings.
             @param file_name - filename
         """
-        data_file_name = file_name + '.data'
-        meta_file_name = file_name + '.meta'
+        data_file_name = file_name + '.data.npy'
+        meta_file_name = file_name + '.meta.npy'
         np.save(data_file_name, self._cells)
-        np.save(meta_file_name, np.array([self._base_pos, self._cell_size, self._transform]))
+        np.save(meta_file_name, np.array([self._base_pos, self._cell_size, self._aabb, self._transform]))
 
     def load(self, file_name, b_restore_transform=False):
         """
@@ -102,13 +106,11 @@ class VoxelGrid(object):
         self._base_pos = meta_data[0]
         self._num_cells = np.array(self._cells.shape)
         self._cell_size = meta_data[1]
+        self._aabb = meta_data[2]
         if b_restore_transform:
-            self._transform = meta_data[2]
+            self._transform = meta_data[3]
         else:
             self._transform = np.eye(4)
-        max_point = self._cell_size * self._num_cells - self._base_pos
-        self._aabb = np.array([self._base_pos[0], self._base_pos[1], self._base_pos[2],
-                              max_point[0], max_point[1], max_point[2]])
 
     def get_index_generator(self):
         """
@@ -130,11 +132,27 @@ class VoxelGrid(object):
             Returns the index triple of the voxel in which the specified position lies
             Returns None if the given position is out of bounds.
         """
-        local_pos = np.dot(self._inv_transform, np.array([pos[0], pos[1], pos[2], 1]))[:3]
+        self._homogeneous_point[:3] = pos
+        local_pos = np.dot(self._inv_transform, self._homogeneous_point)[:3]
         if (local_pos < self._aabb[:3]).any() or (local_pos >= self._aabb[3:]).any():
             return None
-        rel_pos = local_pos - self._base_pos
-        return [int(math.floor(x / self._cell_size)) for x in rel_pos]
+        local_pos -= self._base_pos
+        local_pos /= self._cell_size
+        return map(int, local_pos)
+
+    def map_to_grid(self, pos):
+        """
+            Maps the given global position to local frame and returns both the local point
+            and the index (None if out of bounds).
+        """
+        self._homogeneous_point[:3] = pos
+        local_pos = np.dot(self._inv_transform, self._homogeneous_point)[:3]
+        idx = None
+        if (local_pos >= self._aabb[:3]).all() and (local_pos < self._aabb[3:]).all():
+            rel_pos = local_pos - self._base_pos
+            rel_pos /= self._cell_size
+            idx = map(int, rel_pos)
+        return local_pos, idx
 
     def get_cell_position(self, idx, b_center=True):
         """
@@ -358,13 +376,13 @@ class SDF(object):
             Returns the shortest distance of the given point to the closest obstacle surface.
             @param point - point as a numpy array (x, y, z).
         """
-        idx = self._grid.get_cell_idx(point)
+        local_point, idx = self._grid.map_to_grid(point)
         if idx is not None:
             return self._grid.get_cell_value(idx)
         # the point is out of range of our grid, we need to approximate the distance
-        local_point = np.dot(self._grid.get_inverse_transform(), np.array([point[0], point[1], point[2], 1]))[:3]
         projected_point = np.clip(local_point, self._approximation_box[:3], self._approximation_box[3:])
-        return np.linalg.norm(local_point - projected_point)
+        local_point -= projected_point
+        return np.linalg.norm(local_point)
 
     def clear_visualization(self):
         """
@@ -375,24 +393,24 @@ class SDF(object):
     def save(self, file_name):
         """
             Save this distance field to a file.
-            Note that this function will create several files with different endings attached to file_name
+            Note that this function may create several files with different endings attached to file_name
             @param file_name - file to store sdf in
         """
         grid_file_name = file_name + '.grid'
         self._grid.save(grid_file_name)
         meta_file_name = file_name + '.meta'
-        meta_data = np.array([grid_file_name, self._approximation_box])
+        meta_data = np.array([self._approximation_box])
         np.save(meta_file_name, meta_data)
 
     def load(self, file_name):
         """
             Loads an sdf from file.
         """
-        meta_data = np.load(file_name + '.meta')
+        meta_data = np.load(file_name + '.meta.npy')
+        self._approximation_box = meta_data[0]
         if self._grid is None:
             self._grid = VoxelGrid(np.array([0, 0, 0, 0, 0, 0]))
-        self._grid.load(meta_data[0])
-        self._approximation_box = meta_data[1]
+        self._grid.load(file_name + '.grid')
 
     def visualize(self, safe_distance=None):
         """
@@ -549,7 +567,7 @@ class SDFBuilder(object):
         """
             Creates a new sdf for the current state of the OpenRAVE environment provided on construction.
             The SDF is created in world frame of the environment. You can later change its transform.
-            NOTE: If you do not intend to contrinue creating more SDFs using this builder, call clear() afterwards.
+            NOTE: If you do not intend to continue creating more SDFs using this builder, call clear() afterwards.
             @param workspace_aabb - bounding box of the sdf in form of [min_x, min_y, min_z, max_x, max_y, max_z]
         """
         grid = VoxelGrid(workspace_aabb, cell_size=self._cell_size)
@@ -688,8 +706,77 @@ class SceneSDF(object):
         for (body, body_sdf) in self._body_sdfs.itervalues():
             body_sdf.set_transform(body.GetTransform())
             min_distance = min(min_distance, body_sdf.get_distance(position))
-        return min(min_distance, self._static_sdf.get_distance(position))
+        return min(self._static_sdf.get_distance(position), min_distance)
 
+    def save(self, filename, body_dir=None):
+        """
+            Saves this scene sdf under the specified path.
+            @param filename - absolute filename to save this sdf in (must be a path to a file)
+            @param body_dir - optionally a relative path w.r.t dir(filename) to save the body sdfs in
+                              if not provided, the body sdfs are saved in the same directory as filename points to
+        """
+        base_name = os.path.basename(filename)
+        if not base_name:
+            raise ValueError("The provided filename %s is invalid. The filename must be a valid path to a file" % filename)
+        dir_name = os.path.dirname(filename)
+        if body_dir is None:
+            body_dir = '.'
+        if self._sdf_paths is None:
+            self._sdf_paths = {}
+        static_file_name = base_name + '.static.sdf'
+        static_file_path = dir_name + '/' + static_file_name
+        # now build a dictionary mapping body name to sdf (static for static sdf) and save sdfs
+        # TODO We could have a name collision here, if the environment contains a kinbody called static
+        sdf_paths = {'static': static_file_path}
+        rel_paths = {'static': './' + static_file_name}
+        if 'static' not in self._sdf_paths:
+            self._static_sdf.save(static_file_path)
+        for (key, value) in self._sdf_paths:  # reuse the filenames we loaded things from
+            sdf_paths[key] = value
+        for (body, body_sdf) in self._body_sdfs.itervalues():
+            if body.GetName() in sdf_paths:  # no need to save body sdfs we loaded
+                continue
+            # we need to save the body sdfs for which we don't have an sdf path
+            body_sdf_filename = str(body.GetName()) + '.sdf'
+            body_sdf_filepath = dir_name + '/' + body_dir + '/' + body_sdf_filename
+            sdf_paths[body.GetName()] = body_sdf_filepath
+            body_sdf.save(body_sdf_filepath)
+            rel_paths[str(body.GetName())] = body_dir + '/' + body_sdf_filename
+        with open(filename, 'w') as meta_file:
+            yaml.dump(rel_paths, meta_file)
+        self._sdf_paths = sdf_paths
+
+    def load(self, filename):
+        """
+            Loads a scene sdf from the specified path.
+        """
+        dir_name = os.path.dirname(filename)
+        with open(filename, 'r') as meta_file:
+            self._body_sdfs = {}
+            # first read in realtive paths and make them absolute
+            rel_paths = yaml.load(meta_file)
+            self._sdf_paths = {}
+            for (name, rel_path) in rel_paths.iteritems():
+                self._sdf_paths[name] = dir_name + '/' + rel_path
+            # next read in sdfs
+            available_sdfs = {}
+            for (name, path) in self._sdf_paths.iteritems():
+                if name != 'static':
+                    body = self._env.GetKinBody(name)
+                    if body is None:
+                        logging.log(logging.ERROR, "Could not find kinbody %s" % name)
+                        continue
+                    self._body_sdfs[name] = (body, SDF(self._env, path))
+                    available_sdfs[name] = True
+                else:
+                    self._static_sdf = SDF(self._env, path)
+                    available_sdfs['static'] = True
+            # verify we have all movable bodies
+            for name in self._movable_body_names:
+                if name not in available_sdfs:
+                    raise ValueError("Could not load sdf for kinbody %s" % name)
+            if 'static' not in available_sdfs:
+                raise ValueError("Could not load sdf for static environment")
 
 class ORSDFVisualization(object):
     """

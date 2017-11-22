@@ -22,7 +22,7 @@ if __name__=="__main__":
     robot_name = 'r850_robotiq'
     scene_sdf = sdf.SceneSDF(env, movable_names, robot_name)
     volume = np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.2])
-    scene_sdf.create_sdf(volume, 0.02, 0.02)
+    # scene_sdf.create_sdf(volume, 0.02, 0.02)
     sdf_vis = sdf.ORSDFVisualization(env)
     # sdf_builder = sdf.SDFBuilder(env, 0.2)
     # my_sdf = sdf_builder.create_sdf(np.array([-1.3, -1.3, -0.5, 1.3, 1.3, 1.5]))
