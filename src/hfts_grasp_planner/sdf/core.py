@@ -154,6 +154,31 @@ class VoxelGrid(object):
             idx = map(int, rel_pos)
         return local_pos, idx
 
+    def map_to_grid_batch(self, positions):
+        """
+            Maps the given global positions to local frame an return both the local points
+            and the indices (None if out of bounds).
+            @param positions is assumed to be a numpy matrix of shape (n, 4) where n is the number of query
+                    points and the last row are 1s.
+            @return (local_positions, indices, mask) where
+                local_positions are the transformed points in a numpy array of shape (n, 4) where n
+                    is the number of query points
+                indices is a numpy array of shape (m, 3) containing indices for the m <= n valid local points,
+                    or None if all points are out of bounds (in this case mask.any() is False)
+                mask is a 1D numpy array of length n where mask[i] is True iff local_positions[i, :3] is within
+                    bounds and indices contains an index for this position
+
+        """
+        local_positions = np.dot(positions, self._inv_transform.transpose())
+        in_bounds_lower = (local_positions[:, :3] >= self._aabb[:3]).all(axis=1)
+        in_bounds_upper = (local_positions[:, :3] < self._aabb[3:]).all(axis=1)
+        mask = np.logical_and(in_bounds_lower, in_bounds_upper)
+        if mask.any():
+            indices = ((local_positions[mask, :3] - self._base_pos) / self._cell_size).astype(int)
+        else:
+            indices = None
+        return local_positions, indices, mask
+
     def get_cell_position(self, idx, b_center=True):
         """
             Returns the position in R^3 of the center or min corner of the voxel with index idx
@@ -175,6 +200,13 @@ class VoxelGrid(object):
         """
         idx = self.sanitize_idx(idx)
         return self._cells[idx[0], idx[1], idx[2]]
+
+    def get_cell_values(self, indices):
+        """
+            Returns value of the cells with the specified indices.
+            @param indices - a numpy array of type int with shape (n, 3), where n is the number of query indices.
+        """
+        return self._cells[indices[:, 0], indices[:, 1], indices[:, 2]]
 
     def get_num_cells(self):
         """
@@ -371,6 +403,23 @@ class SDF(object):
         """
         return self._grid.get_transform()
 
+    def _get_heuristic_distance_local(self, local_point):
+        """
+            Returns a heuristical shortest distance of the given point the closest obstacle surface.
+            @param local_point - point as numpy array (x, y, z), assumed to be in local frame
+        """
+        projected_point = np.clip(local_point, self._approximation_box[:3], self._approximation_box[3:])
+        rel_point = local_point - projected_point
+        return np.linalg.norm(rel_point)
+
+    def get_heuristic_distance(self, point):
+        """
+            Returns a heuristical shortest distance of the given point the closest obstacle surface.
+            @param point - point as numpy array (x, y, z)
+        """
+        local_point, idx = self._grid.map_to_grid(point)
+        return self._get_heuristic_distance_local(local_point)
+
     def get_distance(self, point):
         """
             Returns the shortest distance of the given point to the closest obstacle surface.
@@ -380,9 +429,27 @@ class SDF(object):
         if idx is not None:
             return self._grid.get_cell_value(idx)
         # the point is out of range of our grid, we need to approximate the distance
-        projected_point = np.clip(local_point, self._approximation_box[:3], self._approximation_box[3:])
-        local_point -= projected_point
-        return np.linalg.norm(local_point)
+        return self._get_heuristic_distance_local(local_point)
+
+    def get_distances(self, positions):
+        """
+            Returns the shortest distance of the given points to the closest obstacle surface respectively.
+            @param positions - a numpy matrix of shape (n, 4), where n is the number of query points.
+                               The positions are expected to be given in homogeneous world coordinates,
+                               i.e. the last column is expected to be 1s.
+        """
+        distances = np.zeros(positions.shape[0])
+        local_points, grid_indices, valid_mask = self._grid.map_to_grid_batch(positions)
+        # retrieve the distances for which we have a valid index
+        if grid_indices is not None:  # in case we have any valid points
+            distances[valid_mask] = self._grid.get_cell_values(grid_indices)
+            # for the rest, apply heuristic
+            inverted_mask = np.logical_not(valid_mask)
+            # TODO we might be able to optimize this step a bit more by using more numpy batch operations
+            distances[inverted_mask] = map(self._get_heuristic_distance_local, local_points[inverted_mask, :3])
+        else:
+            distances = map(self._get_heuristic_distance_local, local_points[:, :3])
+        return distances
 
     def clear_visualization(self):
         """
@@ -708,6 +775,19 @@ class SceneSDF(object):
             min_distance = min(min_distance, body_sdf.get_distance(position))
         return min(self._static_sdf.get_distance(position), min_distance)
 
+    def get_distances(self, positions):
+        """
+            Returns the signed distance from the given positions to the closest obstacle surface
+            @param positions - a numpy matrix of shape (n, 4) where n is the number of query positions.
+                                Each position is assumed to be given in homogenous world coordinates, i.e.
+                                the last column is assumend to be all 1s.
+        """
+        min_distances = np.full(positions.shape[0], float('inf'))
+        for (body, body_sdf) in self._body_sdfs.itervalues():
+            body_sdf.set_transform(body.GetTransform())
+            min_distances = np.minimum(min_distances, body_sdf.get_distances(positions))
+        return np.minimum(min_distances, self._static_sdf.get_distances(positions))
+
     def save(self, filename, body_dir=None):
         """
             Saves this scene sdf under the specified path.
@@ -799,12 +879,13 @@ class ORSDFVisualization(object):
         # first sample values
         num_samples = (volume[3:] - volume[:3]) / resolution
         start_time = time.time()
-        positions = np.array([np.array([x, y, z]) for x in np.linspace(volume[0], volume[3], num_samples[0])
+        positions = np.array([np.array([x, y, z, 1.0]) for x in np.linspace(volume[0], volume[3], num_samples[0])
                                for y in np.linspace(volume[1], volume[4], num_samples[1])
                                for z in np.linspace(volume[2], volume[5], num_samples[2])])
         print ('Computation of positions took %f s' % (time.time() - start_time))
         start_time = time.time()
-        values = [sdf.get_distance(pos) for pos in positions]
+        # values = [sdf.get_distance(pos) for pos in positions]
+        values = sdf.get_distances(positions)
         print ('Computation of distances took %f s' % (time.time() - start_time))
         # compute min and max
         # draw
@@ -825,7 +906,10 @@ class ORSDFVisualization(object):
         colors = np.array([compute_color(v) for v in values])
         # TODO we should read the conversion from pixels to workspace size from somwhere
         # and convert true cell size to it
-        handle = self._env.plot3(positions, 20, colors)  # size is in pixel
+        # TODO we could achieve this by calling
+        # handle = self._env.plot3(positions[:1000], resolution, colors[:1000], 1)
+        # but the viewer crashes when doing this
+        handle = self._env.plot3(positions[:, :3], 20, colors)  # size is in pixel
         self._handles.append(handle)
         print ('Drawing stuff took %f s' % (time.time() - start_time))
 
