@@ -12,6 +12,7 @@ import itertools
 import skfmm
 import numpy as np
 import openravepy as orpy
+from openravepy.misc import ComputeBoxMesh
 from hfts_grasp_planner.utils import inverse_transform
 
 
@@ -321,7 +322,7 @@ class ORVoxelGridVisualization(object):
         self._voxel_grid = voxel_grid
         self._handles = []
 
-    def update(self, min_sat_value=None, max_sat_value=None):
+    def update(self, min_sat_value=None, max_sat_value=None, style=0):
         """
             Updates this visualization to reflect the latest state of the underlying voxel grid.
             The voxels are colored according to their values. By default the color of a voxel
@@ -335,6 +336,8 @@ class ORVoxelGridVisualization(object):
 
             @param min_sat_value (optional) - minimal saturation value
             @param max_sat_value (optional) - maximal saturation value
+            @param style (optional) - if 0, renders cells using 2d sprites, if 1, renders cells using 3d balls
+                                      WARNING: Rendering many balls(cells) will crash OpenRAVE
         """
         self._handles = []
         values = [x.get_value() for x in self._voxel_grid]
@@ -355,7 +358,10 @@ class ORVoxelGridVisualization(object):
         colors = np.array([compute_color(v) for v in values])
         # TODO we should read the conversion from pixels to workspace size from somwhere
         # and convert true cell size to it
-        handle = self._env.plot3(positions, 20, colors)  # size is in pixel
+        if style == 0:
+            handle = self._env.plot3(positions, 20, colors)  # size is in pixel
+        else:
+            handle = self._env.plot3(positions, self._voxel_grid.get_cell_size / 2.0, colors, 1)
         self._handles.append(handle)
 
     def clear(self):
@@ -369,17 +375,15 @@ class SDF(object):
     """
         This class represents a signed distance field.
     """
-    def __init__(self, env, file_name=None, grid=None):
+    def __init__(self, file_name=None, grid=None):
         """
-            Creates a new signed distance field defined in the specified environment.
+            Creates a new signed distance field.
             You may either create an SDF using a SDFBuilder to by loading it from file.
             In the first case, you do not call this method manually.
             In the latter case, you need to provide a file_name
-            @param env - environment to use
             @param file_name (optional) - a file to load this SDF from
             @param grid (optional) - a VoxelGrid storing all signed distances - used by SDFBuilder
         """
-        self._env = env
         self._grid = grid
         self._approximation_box = None
         self._or_visualization = None
@@ -479,14 +483,15 @@ class SDF(object):
             self._grid = VoxelGrid(np.array([0, 0, 0, 0, 0, 0]))
         self._grid.load(file_name + '.grid')
 
-    def visualize(self, safe_distance=None):
+    def visualize(self, env, safe_distance=None):
         """
-            Visualizes this sdf in the underlying openrave environment.
+            Visualizes this sdf in the given openrave environment.
+            @param env - OpenRAVE environment to visualize the SDF in.
             @param safe_distance (optional) - if provided, the visualization colors cells that are more than
                     safe_distance away from any obstacle in the same way as obstacles that are infinitely far away.
         """
-        if not self._or_visualization:
-            self._or_visualization = ORVoxelGridVisualization(self._env, self._grid)
+        if not self._or_visualization or self._or_visualization._env != env:
+            self._or_visualization = ORVoxelGridVisualization(env, self._grid)
             self._or_visualization.update(max_sat_value=safe_distance)
         else:
             self._or_visualization.update(max_sat_value=safe_distance)
@@ -647,7 +652,7 @@ class SDFBuilder(object):
         self._compute_sdf(grid)
         print ('Computation of sdf took %f s' % (time.time() - start_time))
         self._body_manager.disable_bodies()
-        return SDF(self._env, grid=grid)
+        return SDF(grid=grid)
 
     def clear(self):
         """
@@ -665,13 +670,13 @@ class SceneSDF(object):
         i.e. the current poses of all movable kinbodies into account.
         The robot is not considered in the distance field.
     """
-    def __init__(self, env, movable_body_names, robot_name, sdf_paths=None, radii=None):
+    def __init__(self, env, movable_body_names, excluded_bodies=None, sdf_paths=None, radii=None):
         """
             Constructor for SceneSDF. In order to actually use a SceneSDF you need to
             either call load_sdf or create_sdf.
             @param env - OpenRAVE environment to use
             @param movable_body_names - list of names of kinbodies that can move
-            @param robot_name - the name of the robot
+            @param excluded_bodies - a list of kinbody names to exclude, i.e. completely ignore
             @param sdf_paths - optionally a dictionary that maps kinbody name to filename to
                                load an sdf from for that body
             @param radii - optionally a dictionary that maps kinbody name to a radius
@@ -679,7 +684,9 @@ class SceneSDF(object):
         """
         self._env = env
         self._movable_body_names = movable_body_names
-        self._robot_name = robot_name
+        if excluded_bodies is None:
+            excluded_bodies = []
+        self._ignored_body_names = excluded_bodies
         self._static_sdf = None
         self._body_sdfs = {}
         self._sdf_paths = None
@@ -720,28 +727,32 @@ class SceneSDF(object):
             @param approx_error - a relativ error between 0 and 1 that is allowed to occur
                                   at boundaries of movable kinbody sdfs
         """
-        # first we build a sdf for the static obstacles
+        # before we do anything, save which bodies are enabled
+        body_enable_status = {}
+        for body in self._env.GetBodies():
+            body_enable_status[body.GetName()] = body.IsEnabled()
+        # now first we build a sdf for the static obstacles
         builder = SDFBuilder(self._env, static_resolution)
-        # first disable the robot and all movable objects
-        self._enable_body(self._robot_name, False)
+        # for that disable all bodies that we ignore and all movable objects
+        for body_name in self._ignored_body_names:
+            self._enable_body(body_name, False)
         for body_name in self._movable_body_names:
             self._enable_body(body_name, False)
         self._static_sdf = builder.create_sdf(workspace_bounds)
+        # Now we build SDFs for all movable object
         # if we have different resolutions for static and movables, we need a new builder
         if static_resolution != moveable_resolution:
             builder.clear()
             builder = SDFBuilder(self._env, moveable_resolution)
-        # Now we build SDFs for all movable object
         # first disable everything in the scene
         for body in self._env.GetBodies():
             body.Enable(False)
+        # Next create for each movable body an individual sdf
         for body_name in self._movable_body_names:
             new_sdf = None
             body = None
-            if self._sdf_paths is not None and body_name in self._sdf_paths:
-                new_sdf = SDF(self._env, self._sdf_paths[body_name])
-                body = self._env.GetKinBody(body_name)
-            else:
+            # if we do not have an sdf to load for this body, create it
+            if self._sdf_paths is None or body_name not in self._sdf_paths:
                 # Prepare sdf creation for this body
                 # the body exists, otherwise we would have crashed before
                 body = self._env.GetKinBody(body_name)
@@ -759,11 +770,15 @@ class SceneSDF(object):
                 new_sdf.set_approximation_box(body_bounds)  # set the actual body aabb as approx box
                 body.SetTransform(old_tf)  # restore transform
                 body.Enable(False)  # disable body again
+            else:  # if self._sdf_paths is not None and body_name in self._sdf_paths
+                # else load an sdf
+                new_sdf = SDF(self._sdf_paths[body_name])
+                body = self._env.GetKinBody(body_name)
             self._body_sdfs[body_name] = (body, new_sdf)
         builder.clear()
         # Finally enable all bodies
         for body in self._env.GetBodies():
-            body.Enable(True)
+            body.Enable(body_enable_status[body.GetName()])
 
     def get_distance(self, position):
         """
@@ -846,10 +861,10 @@ class SceneSDF(object):
                     if body is None:
                         logging.log(logging.ERROR, "Could not find kinbody %s" % name)
                         continue
-                    self._body_sdfs[name] = (body, SDF(self._env, path))
+                    self._body_sdfs[name] = (body, SDF(path))
                     available_sdfs[name] = True
                 else:
-                    self._static_sdf = SDF(self._env, path)
+                    self._static_sdf = SDF(path)
                     available_sdfs['static'] = True
             # verify we have all movable bodies
             for name in self._movable_body_names:
@@ -869,12 +884,18 @@ class ORSDFVisualization(object):
         self._env = or_env
         self._handles = []
 
-    def visualize(self, sdf, volume, resolution=0.1, min_sat_value=None, max_sat_value=None):
+    def visualize(self, sdf, volume, resolution=0.1, min_sat_value=None, max_sat_value=None, alpha=0.1,
+                  style=0):
         """
             Samples the given sdf within the specified volume and visualizes the data.
             @param sdf - the signed distance field to visualize
             @param volume - the workspace volume in which the sdf should be visualized
             @param resolution (optional) - the resolution at which the sdf should be sampled.
+            @param min_sat_value (optional) - all points with distance smaller than this will have the same color
+            @param max_sat_value (optional) - all point with distance larger than this will have the same color
+            @param alpha (optional) - alpha value for colors
+            @param style (optional) - if 0, renders cells using 2d sprites, if 1, renders cells using 3d balls
+                                      WARNING: Rendering many balls(cells) will crash OpenRAVE
         """
         # first sample values
         num_samples = (volume[3:] - volume[:3]) / resolution
@@ -895,8 +916,8 @@ class ORSDFVisualization(object):
         if max_sat_value is None:
             max_sat_value = max(values)
 
-        blue_color = np.array([0.0, 0.0, 1.0, 0.1])
-        red_color = np.array([1.0, 0.0, 0.0, 0.1])
+        blue_color = np.array([0.0, 0.0, 1.0, alpha])
+        red_color = np.array([1.0, 0.0, 0.0, alpha])
         def compute_color(value):
             """
                 Computes the color for the given value
@@ -904,14 +925,25 @@ class ORSDFVisualization(object):
             rel_value = np.clip((value - min_sat_value) / (max_sat_value - min_sat_value), 0.0, 1.0)
             return (1.0 - rel_value) * red_color + rel_value * blue_color
         colors = np.array([compute_color(v) for v in values])
-        # TODO we should read the conversion from pixels to workspace size from somwhere
-        # and convert true cell size to it
-        # TODO we could achieve this by calling
-        # handle = self._env.plot3(positions[:1000], resolution, colors[:1000], 1)
-        # but the viewer crashes when doing this
-        handle = self._env.plot3(positions[:, :3], 20, colors)  # size is in pixel
+        if style == 0:
+            handle = self._env.plot3(positions[:, :3], 10, colors)  # size is in pixel
+        else:
+            # Instead we can also render balls, but this can easily crash OpenRAVE if done for many cells
+            handle = self._env.plot3(positions[:, :3], resolution / 2.0, colors, 1)
         self._handles.append(handle)
-        print ('Drawing stuff took %f s' % (time.time() - start_time))
+        print ('Rendering took %f s' % (time.time() - start_time))
+        # Alternatively, the following code would render the sdf using meshes, but this also kills openrave
+        # colors = np.reshape([12 * [compute_color(v)] for v in values], (12 * values.shape[0], 4))
+        # box_extents = np.array([-0.5, -0.5, -0.5, 0.5, 0.5, 0.5]) * resolution
+        # vertices = np.zeros((8 * positions.shape[0], 3))
+        # indices = np.zeros((12 * positions.shape[0], 3), dtype=np.int64)
+        # box_vertices, box_indices = ComputeBoxMesh(box_extents)
+        # for pos_idx in xrange(len(positions)):
+        #     vertices[pos_idx * 8 : (pos_idx + 1) * 8] = box_vertices + positions[pos_idx, :3]
+        #     indices[pos_idx * 12 : (pos_idx + 1) * 12] = box_indices + pos_idx * 12
+        # handle = self._env.drawtrimesh(points=vertices,
+        #                                indices=indices)
+        #                             #    colors=colors)
 
     def clear(self):
         """
