@@ -14,17 +14,20 @@ from hierarchy_visualization import FreeSpaceProximitySamplerVisualizer
 class IntegratedHFTSPlanner(object):
     """ Implements a simple to use interface to the integrated HFTS planner. """
 
-    def __init__(self, env_file, hand_file, hand_cache_file, robot_name, manipulator_name,
+    def __init__(self, env_file, hand_file, hand_cache_file, hand_config_file,
+                 robot_name, manipulator_name,
                  data_root_path, dof_weights=None, max_num_hierarchy_descends=4,
                  min_iterations=20, max_iterations=70, p_goal_tree=0.8, vel_factor=0.2,
                  b_visualize_system=False, b_visualize_grasps=False, b_visualize_hfts=False,
                  b_show_traj=False, b_show_search_tree=False, free_space_weight=0.1, connected_space_weight=4.0,
-                 use_approximates=True, compute_velocities=True, time_limit=60.0):
+                 use_approximates=True, compute_velocities=True, time_limit=60.0,
+                 open_hand_config=None):
         """ Creates a new instance of an HFTS planner
             NOTE: It is only possible to display one scene in OpenRAVE at a time. Hence, if the parameters
             b_visualize_system and b_visualize_grasps are both true, only the motion planning scene is shown.
          @param env_file String containing a path to an OpenRAVE environment
          @param hand_file String containing a path to an OpenRAVE hand model (a robot consisting of just the hand)
+         @param hand_config_file String containing path to yaml file containing additional information on hand
          @param robot_name String containing the name of the robot to use
          @param manipulator_name String containing the name of the robot's manipulator to use
          @param dof_weights (optional) List of floats, containing a weight for each DOF. These weights are used in
@@ -48,28 +51,26 @@ class IntegratedHFTSPlanner(object):
             found a valid grasp yet
          @param use_velocities Boolean, if True, compute a whole trajectory (with velocities), else just a path
          @param time_limit Runtime limit for the algorithm in seconds (float)
+         @param open_hand_config - Numpy array representing an open hand configuration. If not provided initial configuration is used.
          """
         self._env = orpy.Environment()
         self._env.Load(env_file)
         if b_visualize_system:
             self._env.SetViewer('qtcoin')
             b_visualize_grasps = False
-        if len(self._env.GetRobots()) == 0:
+        if not self._env.GetRobots():
             raise ValueError('The provided environment does not contain a robot!')
         self._robot = self._env.GetRobot(robot_name)
         self._robot.SetActiveManipulator(manipulator_name)
-        # TODO this is a hack to fix a super weird behaviour regarding the
-        # TODO the transformation of the kmr_robotiq robot. this should NOT be necessary
-        self._robot_transformation_hack = self._robot.GetTransform()
         self._or_motion_planner = orpy.interfaces.BaseManipulation(self._robot)
         if dof_weights is None:
             dof_weights = self._robot.GetDOF() * [1.0]
         self._cSampler = RobotCSpaceSampler(self._env, self._robot, scaling_factors=dof_weights)
-        # TODO read these robot-specific specs from a file
         planning_scene_interface = PlanningSceneInterface(self._env, self._robot.GetName())
         self._object_io_interface = ObjectFileIO(data_path=data_root_path)
         self._grasp_planner = GraspGoalSampler(object_io_interface=self._object_io_interface,
                                                hand_path=hand_file, hand_cache_file=hand_cache_file,
+                                               hand_config_file=hand_config_file,
                                                planning_scene_interface=planning_scene_interface,
                                                visualize=b_visualize_grasps)
         hierarchy_visualizer = None
@@ -85,9 +86,12 @@ class IntegratedHFTSPlanner(object):
                                                             connected_weight=connected_space_weight,
                                                             free_space_weight=free_space_weight,
                                                             debug_drawer=hierarchy_visualizer)
-        # TODO the open hand configuration should be given from a configuration file
+        # default open hand configuration is initial configuration
+        if open_hand_config is None:
+            manip = self._robot.GetActiveManipulator()
+            open_hand_config = self._robot.GetDOFValues(manip.GetGripperDOFIndices())
         self._constraints_manager = GraspApproachConstraintsManager(self._env, self._robot,
-                                                                    self._cSampler, numpy.array([0.0, 0.0495]))
+                                                                    self._cSampler, open_hand_config)
         p_goal_provider = DynamicPGoalProvider()
         self._debug_tree_drawer = None
         if b_show_search_tree:
@@ -211,8 +215,6 @@ class IntegratedHFTSPlanner(object):
                 return False
             body = self._env.GetBodies()[-1]  # last body is most recently added
             body.SetName(object_name)
-        if body == self._robot:
-            pose = numpy.dot(pose, self._robot_transformation_hack)
         body.SetTransform(pose)
         return True
 

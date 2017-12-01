@@ -1,0 +1,16 @@
+num_fingertips: 3
+fingertip_transforms:
+  - position: [0.016, 0.01835, 0.0]
+    orientation: [-1.57, 0.0, 0.5236]
+  - position: [0.016, 0.01835, 0.0]
+    orientation: [-1.57, 0.0, 0.5236]
+  - position: [0.016, 0.01835, 0.0]
+    orientation: [-1.57, 0.0, 0.5236]
+fingertip_link_names:
+  - 'finger_1_link_3'
+  - 'finger_2_link_3'
+  - 'finger_middle_link_3'
+open_hand_config: [0.0, 0.0495]
+open_hand_dir: [0.0, -1.0]
+upper_limit: [0.1784, 0.93124747] # optional in case OpenRAVE limits are not reasonable for grasping
+lower_limit: [-0.192, 0.0495]  # optional

@@ -48,9 +48,11 @@ class HandlerClass(object):
         b_show_search_tree = rospy.get_param(node_name + '/show_search_tree', default=False)
         env_file = self._package_path + '/' + rospy.get_param(node_name + '/environment_file_name')
         hand_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_file')
+        hand_config_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_config_file')
         hand_cache_file = self._package_path + '/' + rospy.get_param(node_name + '/hand_cache_file')
         robot_name = rospy.get_param(node_name + '/robot_name')
         manip_name = rospy.get_param(node_name + '/manipulator_name')
+        open_hand_config = rospy.get_param(node_name + '/open_hand_config', default=None)
         # Load dynamic parameters also from the parameter server
         # Make sure we do not visualize grasps and the system at the same time (only one OR viewer)
         b_visualize_grasps = b_visualize_grasps and not b_visualize_system
@@ -65,7 +67,9 @@ class HandlerClass(object):
                                               b_visualize_hfts=b_visualize_hfts,
                                               b_show_traj=b_show_traj,
                                               b_show_search_tree=b_show_search_tree,
-                                              hand_file=hand_file)
+                                              hand_file=hand_file,
+                                              hand_config_file=hand_config_file,
+                                              open_hand_config=open_hand_config)
         # Listen to joint states
         rospy.Subscriber(self._joint_state_topic_name, JointState,
                          self.receive_joint_state)

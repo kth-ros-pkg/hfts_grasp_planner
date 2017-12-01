@@ -5,6 +5,7 @@ show_trajectory: False
 show_search_tree: False
 environment_file_name: data/environments/test_env.xml
 hand_file: models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
+hand_config_file: models/robotiq/hand_config.yaml
 hand_cache_file: data/cache/robotiq_hand.npy
 robot_name: kmr_iiwa_robotiq
 manipulator_name: arm_with_robotiq

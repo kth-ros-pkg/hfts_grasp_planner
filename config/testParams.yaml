@@ -1,3 +1,0 @@
-visualize: True
-hand_cache_file: data/cache/robotiq_hand.npy
-hand_file: /models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml

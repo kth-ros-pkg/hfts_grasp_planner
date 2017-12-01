@@ -19,12 +19,13 @@ class HFTSNodeDataExtractor:
 class GraspGoalSampler:
     """ Wrapper class for the HFTS Grasp Planner/Sampler that allows a full black box usage."""
 
-    # TODO data_path is specific to reading objects from a filesystem. Better probably to pass ObjectIO
-    def __init__(self, object_io_interface, hand_path, hand_cache_file, planning_scene_interface,
-                 visualize=False, open_hand_offset=0.1):
+    def __init__(self, object_io_interface, hand_path, hand_cache_file, hand_config_file,
+                 planning_scene_interface, visualize=False, open_hand_offset=0.1):
         """ Creates a new wrapper.
             @param object_io_interface IOObject Object that handles IO requests
-            @param hand_path Path to where the hand data is stored.
+            @param hand_path Path to OpenRAVE hand file
+            :hand_cache_file: Path to where the hand specific data is/can be stored.
+            :hand_config_file: Path to hand configuration file containing required additional hand information
             @param planning_scene_interface OpenRAVE environment with some additional information
                                             containing the robot and its surroundings.
             @param visualize If true, the internal OpenRAVE environment is set to be visualized
@@ -61,9 +62,11 @@ class GraspGoalSampler:
         """ Returns whether the given node is a goal or not. """
         return sampling_result.hierarchyInfo.is_goal()
 
-    def load_hand(self, hand_path, hand_cache_file):
+    def load_hand(self, hand_path, hand_cache_file, hand_config_file):
         """ Reset the hand being used. @see __init__ for parameter description. """
-        self.grasp_planner.load_hand(hand_file=hand_path, hand_cache_file=hand_cache_file)
+        self.grasp_planner.load_hand(hand_file=hand_path,
+                                     hand_cache_file=hand_cache_file,
+                                     hand_config_file=hand_config_file)
 
     def set_object(self, obj_id, model_id=None):
         """ Set the object.

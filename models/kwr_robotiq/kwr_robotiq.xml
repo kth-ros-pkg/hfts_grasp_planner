@@ -1,5 +1,5 @@
 <robot name="kmr_iiwa_robotiq">
-    <robot file="/home/joshua/resources/robdream_models/confidential_collada/kuka-kmr.zae"/>
+        <robot file="/home/joshua/resources/kuka-kmr.zae"/>
     <robot file="../robotiq/urdf_openrave_conversion/robotiq_s.xml"/>
     <kinbody>
         <body name="palm">

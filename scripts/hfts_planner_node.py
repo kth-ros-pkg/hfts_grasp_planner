@@ -32,8 +32,11 @@ class HandlerClass(object):
         self._planner = HFTSSampler(self._object_loader, num_hops=4, vis=b_visualize)
         # Load hand and save joint names
         hand_file = package_path + rospy.get_param(rospy.get_name() + '/hand_file')
+        hand_config_file = package_path + rospy.get_param(rospy.get_name() + '/hand_config_file')
         hand_cache_file = package_path + '/' + rospy.get_param(rospy.get_name() + '/hand_cache_file')
-        self._planner.load_hand(hand_file, hand_cache_file)
+        self._planner.load_hand(hand_file=hand_file,
+                                hand_cache_file=hand_cache_file,
+                                hand_config_file=hand_config_file)
         or_hand = self._planner.get_or_hand()
         joints = or_hand.GetJoints()
         self._joint_names = []
@@ -58,7 +61,6 @@ class HandlerClass(object):
                            'first_level_branching_factor': self._params['hfts_first_level_branching_factor']}
         self._planner.set_parameters(max_iters=self._params['num_hfts_iterations'],
                                      reachability_weight=self._params['reachability_weight'],
-                                     com_center_weight=self._params['com_center_weight'],
                                      hfts_generation_params=hfts_gen_params,
                                      b_force_new_hfts=self._params['force_new_hfts'])
         # We always start from the root node, so create a root node

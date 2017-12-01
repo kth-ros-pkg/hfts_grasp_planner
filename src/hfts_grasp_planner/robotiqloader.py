@@ -19,7 +19,7 @@ class InvalidTriangleException(Exception):
         return repr(self.value)
 
 
-class RobotiqHand:
+class RobotiqHand(object):
     def __init__(self, env, hand_cache_file, hand_file):
         self._or_env = env
         self._or_env.Load(hand_file)
@@ -30,31 +30,31 @@ class RobotiqHand:
 
     def __getattr__(self, attr): # composition
         return getattr(self._or_hand, attr)
-        
+
     def get_hand_manifold(self):
         return self._hand_mani
-    
+
     def plot_fingertip_contacts(self):
         self._plot_handler = []
         colors = [np.array((1, 0, 0)), np.array((0, 1, 0)), np.array((0, 0, 1))]
         tip_link_ids = self.get_fingertip_links()
         point_size = 0.005
-        
+
         for i in range(len(tip_link_ids)):
             link = self._or_hand.GetLink(tip_link_ids[i])
             T = link.GetGlobalMassFrame()
             local_frame_rot = transformations.rotation_matrix(math.pi / 6., [0, 0, 1])[:3, :3]
             T[:3, :3] = T[:3, :3].dot(local_frame_rot)
-            
+
             offset = T[0:3,0:3].dot(self.get_tip_offsets())
             T[0:3,3] = T[0:3,3] + offset
-            
+
             position = T[:3, -1]
             self._plot_handler.append(self._or_env.plot3(points=position, pointsize=point_size, colors=colors[i], drawstyle=1))
             for j in range(3):
                 normal = T[:3, j]
                 self._plot_handler.append(self._or_env.drawarrow(p1=position, p2=position + 0.05 * normal, linewidth=0.001, color=colors[j]))
-    
+
     def get_tip_offsets(self):
         return np.array([0.025, 0.006, 0.0])
 
@@ -70,42 +70,42 @@ class RobotiqHand:
             T[0:3,3] = T[0:3,3] + offset
             ret.append(T)
         return ret
-        
+
     def get_fingertip_links(self):
         return ['finger_1_link_3', 'finger_2_link_3', 'finger_middle_link_3']
-    
+
     def get_non_fingertip_links(self):
         return ['palm', 'finger_1_link_0', 'finger_1_link_2',
                 'finger_2_link_0', 'finger_2_link_1', 'finger_2_link_2',
                 'finger_middle_link_0', 'finger_middle_link_1', 'finger_middle_link_2']
-    
+
     def get_tip_pn(self):
         ret = []
         tfs = self.get_tip_transforms()
         for t in tfs:
             ret.append(np.concatenate((t[:3, 3], t[:3, 1])))
         return np.asarray(ret)
-    
+
     def get_ori_tip_pn(self, hand_conf):
         self._or_hand.SetTransform(np.identity(4))
         self._or_hand.SetDOFValues(hand_conf)
         return self.get_tip_pn()
-    
+
     def set_random_conf(self):
         self._lower_limits, self._upper_limits = self._or_hand.GetDOFLimits()
         self._upper_limits[1] = 0.93124747
         self_collision = True
-        
+
         while self_collision:
             ret = []
             for i in range(2):
                 ret.append(np.random.uniform(self._lower_limits[i], self._upper_limits[i]))
             self.SetDOFValues(ret)
             self_collision = self._or_hand.CheckSelfCollision()
-            
+
     def get_contact_number(self):
         return 3
-        
+
     def hand_obj_transform(self, hand_points, obj_points):
         # We align the hand with the object by matching a frame at the grasp center
         frame_hand = self.get_tri_frame(hand_points)  # [x; y; z] of this frame in the hand frame
@@ -123,7 +123,7 @@ class RobotiqHand:
         # Finally, the translation is from origin to obj_c and then from there in the opposite direction of new_hand_c
         T[:3, -1] = np.transpose(obj_c - new_hand_c)
         return T
-        
+
     def get_tri_frame(self, points):
         ori = np.sum(points, axis=0) / 3.
         x = (points[0, :] - ori) / np.linalg.norm(points[0, :] - ori)
@@ -419,7 +419,7 @@ class RobotiqHandVirtualManifold:
             raise ValueError('[RobotiqHandVirtualMainfold::predictHandConf] grasp encoding is incorrect')
         # Return the configuration and compute the residual of the grasp
         return self.get_pred_res(q), [joint0, joint1]
-    
+
     def compute_grasp_quality(self, obj_com, grasp):
         """
         Computes a grasp quality for the given grasp.
@@ -456,7 +456,7 @@ class RobotiqHandVirtualManifold:
         # # and at the same time would like to spread the contacts apart, so that
         # # we have a high resistance against external torques.
         # return dist_10 + dist_c2 - self._com_center_weight * d
-        
+
     def get_pred_res(self, q):
         # pos_residual0 = dist_in_range(q[0], self._distance_range_0)
         # pos_residual1 = dist_in_range(q[1], self._distance_range_1)

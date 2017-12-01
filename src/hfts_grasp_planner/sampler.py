@@ -7,12 +7,15 @@ import math
 import numpy
 import random
 from rtree import index
-from rrt import SampleData
+from hfts_grasp_planner.rrt import SampleData
 
 NUMERICAL_EPSILON = 0.00001
 
 
-class SamplingResult:
+class SamplingResult(object):
+    """
+        Stores the result of goal sampling step.
+    """
     def __init__(self, configuration, hierarchy_info=None, data_extractor=None, cache_id=-1):
         self.configuration = configuration
         self.data_extractor = data_extractor
@@ -44,6 +47,9 @@ class SamplingResult:
 
 
 class CSpaceSampler:
+    """
+        Interface for configuration space sampler.
+    """
     def __init__(self):
         pass
 
@@ -131,6 +137,9 @@ class CSpaceSampler:
 
 
 class SimpleHierarchyNode:
+    """
+        A hierarchy node for the naive implementation.
+    """
     class DummyHierarchyInfo:
         def __init__(self, unique_label):
             self.unique_label = unique_label
@@ -188,6 +197,9 @@ class SimpleHierarchyNode:
 
 
 class NaiveGoalSampler:
+    """
+        The naive goal sampler, which always goes all the way down in the hierarchy.
+    """
     def __init__(self, goal_region, num_iterations=40, debug_drawer=None):
         self.goal_region = goal_region
         self.depth_limit = goal_region.get_max_depth()
@@ -270,6 +282,9 @@ class NaiveGoalSampler:
 
 
 class FreeSpaceModel(object):
+    """
+        This class builds a model of the collision-free space in form of samples stored in trees.
+    """
     def __init__(self, c_space_sampler):
         self._trees = []
         self._c_space_sampler = c_space_sampler
@@ -297,6 +312,15 @@ class FreeSpaceModel(object):
 
 
 class ExtendedFreeSpaceModel(FreeSpaceModel):
+    """
+        This class extends the FreeSpaceModel to also store individual samples, in two forms:
+        - approximate
+        - temporary
+        An approximate sample is a configuration that is individually stored in a nearest neighbor data structure
+        and represents a configuration of an approximate goal.
+        A temporary sample is a configuration that is individually stored in a list and is used for that exactly?
+
+    """
     def __init__(self, c_space_sampler):
         super(ExtendedFreeSpaceModel, self).__init__(c_space_sampler)
         self._scaling_factors = c_space_sampler.get_scaling_factors()
@@ -367,6 +391,9 @@ class ExtendedFreeSpaceModel(FreeSpaceModel):
 
 
 class FreeSpaceProximityHierarchyNode(object):
+    """
+        This class represents a node in the hierarchy built by the FreeSpaceProximitySampler
+    """
     def __init__(self, goal_node, config=None, initial_temp=0.0, active_children_capacity=20):
         self._goal_nodes = []
         self._goal_nodes.append(goal_node)
@@ -432,17 +459,17 @@ class FreeSpaceProximityHierarchyNode(object):
 
         while len(self._active_children) > self._active_children_capacity:
             p = random.random()
-            sum_temp = 0.0
-            for child in self._active_children:
-                sum_temp += 1.0 / child.get_T_c()
-
-            assert sum_temp > 0.0
-            acc = 0.0
-            i = 0
-            while acc < p:
-                acc += 1.0 / self._active_children[i].get_T_c() * 1.0 / sum_temp
-                i += 1
-            deleted_child = self._active_children[max(i - 1, 0)]
+            children_T_cs = numpy.array([1.0 / child.get_T_c() for child in self._active_children])
+            prefix_sum = numpy.cumsum(children_T_cs)
+            i = numpy.argmax(prefix_sum >= p * children_T_cs[-1])
+            # sum_temp = reduce(lambda s, child: s + 1.0 / child.get_T_c(), self._active_children, 0.0)
+            # assert sum_temp > 0.0
+            # acc = 0.0
+            # i = 0
+            # while acc < p:
+            #     acc += 1.0 / self._active_children[i].get_T_c() * 1.0 / sum_temp
+            #     i += 1
+            deleted_child = self._active_children[i]
             self._active_children.remove(deleted_child)
             self._inactive_children.append(deleted_child)
             logging.debug('[FreeSpaceProximityHierarchyNode::updateActiveChildren] Removing child with ' + \
@@ -590,6 +617,10 @@ class FreeSpaceProximityHierarchyNode(object):
 
 
 class FreeSpaceProximitySampler(object):
+    """
+        A goal hierarchy sampler that utilizes proximity to known free-space samples to guide
+        goal sampling from a hierarchy.
+    """
     def __init__(self, goal_sampler, c_free_sampler, k=4, num_iterations=10,
                  min_num_iterations=8,
                  b_return_approximates=True,

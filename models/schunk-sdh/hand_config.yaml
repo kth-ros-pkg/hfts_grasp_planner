@@ -1,0 +1,14 @@
+num_fingertips: 3
+fingertip_transforms:
+  - position: [0.045, 0.01222, -0.006]
+    orientation: [-1.57, 0.0, 0.0]
+  - position: [0.045, 0.01222, -0.0012]
+    orientation: [-1.57, 0.0, 0.0]
+  - position: [0.045, 0.0122, 0.0]
+    orientation: [-1.57, 0.0, -0.0015]
+fingertip_link_names:
+  - 'A3_Link'
+  - 'B3_Link'
+  - 'C3_Link'
+open_hand_config: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+open_hand_dir: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
