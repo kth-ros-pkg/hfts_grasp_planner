@@ -11,4 +11,7 @@ fingertip_link_names:
   - 'B3_Link'
   - 'C3_Link'
 open_hand_config: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-open_hand_dir: [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+open_hand_dir: [0.0, -0.3, -1.0, -0.3, -1.0, -0.3, -1.0]
+symmetries:
+  - ['A3_Link', 'C3_Link']
+code_position_weight: 5.0

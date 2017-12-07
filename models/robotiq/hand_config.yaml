@@ -14,3 +14,6 @@ open_hand_config: [0.0, 0.0495]
 open_hand_dir: [0.0, -1.0]
 upper_limit: [0.1784, 0.93124747] # optional in case OpenRAVE limits are not reasonable for grasping
 lower_limit: [-0.192, 0.0495]  # optional
+symmetries: # optional
+  - ['finger_1_link_3', 'finger_2_link_3']
+code_position_weight: 1.0

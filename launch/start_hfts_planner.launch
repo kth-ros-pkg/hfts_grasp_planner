@@ -2,5 +2,5 @@
   <arg name="respawn" default="false"/>
   <node name="hfts_planner_node" pkg="hfts_grasp_planner" type="hfts_planner_node.py"
         output="screen" respawn="$(arg respawn)" />
-  <rosparam command="load" file="$(find hfts_grasp_planner)/config/hfts_params_robotiq.yaml" ns="hfts_planner_node" />
+  <rosparam command="load" file="$(find hfts_grasp_planner)/config/hfts_params_sdh.yaml" ns="hfts_planner_node" />
 </launch>

@@ -26,6 +26,8 @@ OTHER_LINK_NAMES_KEY = 'other_link_names'
 OPEN_HAND_DIR_KEY = 'open_hand_dir'
 UPPER_LIMIT_KEY = 'upper_limit'
 LOWER_LIMIT_KEY = 'lower_limit'
+SYMMETRIES_KEY = 'symmetries'
+CODE_POSITION_WEIGHT_KEY = 'code_position_weight'
 NUMERICAL_EPSILON = 0.000001
 
 
@@ -46,9 +48,25 @@ class RobotHand(object):
         self._fingertip_tfs = self._compute_fn_transforms()
         self._limits = self._get_limits()
         self._hand_mani = ReachabilityKDTree(self, cache_file, self._hand_params)
+        self._fingertip_symmetries = self._prepare_symmetries()
 
     def __getattr__(self, attr): # composition, gets called when this class doesn't have attr.
         return getattr(self._or_hand, attr)  # in this case forward it to the OpenRAVE robot
+
+    def _prepare_symmetries(self):
+        """
+            Prepares a list of tuples (i, j), where each tuple means that it
+            makes sense for a given contact tuple to switch contact assignment for fingertip i and j,
+            if the current assignment does not work. This encodes how for instance mirrored grasps
+            can be reached. The list is given by the user in the hand parameters.
+        """
+        symmetries = []
+        if SYMMETRIES_KEY not in self._hand_params:
+            return symmetries
+        link_names = self.get_fingertip_links()
+        name_to_idx = dict(zip(link_names, range(len(link_names))))
+        symmetries = [(name_to_idx[link_1], name_to_idx[link_2]) for (link_1, link_2) in self._hand_params[SYMMETRIES_KEY]]
+        return symmetries
 
     def _load_config(self, config_file_name):
         """
@@ -308,22 +326,23 @@ class RobotHand(object):
                 return True
             curr_conf += step * open_dir
             self.SetDOFValues(curr_conf)
-        return False
+        return self._or_env.CheckCollision(self._or_hand)
 
+    def get_fingertip_symmetries(self):
+        return self._fingertip_symmetries
 
 # TODO maybe define an interface with the methods the grasp planner needs this to have
 class ReachabilityKDTree(object):
     """
         KD tree based hand manifold for a robot hand
     """
-    def __init__(self, or_robot, cache_file_name, hand_params, num_samples=100000, code_position_weight=1.0):
+    def __init__(self, or_robot, cache_file_name, hand_params, num_samples=1000000):
         """
             Creates a new KD-tree based hand manifold for a robot hand.
             :or_robot: - openrave robot, iu.e. the hand
             :cache_file_name: - filename where to save data
             :hand_params: a dictionary of parameters with the keys the top of this file
             :num_samples: number of samples
-            :code_position_weight: weight factor used in encoding of grasps
         """
         self._or_robot = or_robot
         self._cache_file_name = cache_file_name
@@ -332,7 +351,6 @@ class ReachabilityKDTree(object):
         self._max_code = None
         self._hand_configurations = None
         self._kd_tree = None
-        self._code_position_weight = code_position_weight
         self._hand_params = hand_params
         self._num_samples = num_samples
 
@@ -340,7 +358,7 @@ class ReachabilityKDTree(object):
         if 'num_samples' in kwargs:
             self._num_samples = kwargs['num_samples']
         if 'code_position_weight' in kwargs:
-            self._code_position_weight = kwargs['code_position_weight']
+            self._hand_params[CODE_POSITION_WEIGHT_KEY] = kwargs['code_position_weight']
 
     def load(self):
         if os.path.exists(self._cache_file_name):
@@ -369,6 +387,8 @@ class ReachabilityKDTree(object):
                 they are sampled randomly from a uniform distribution if the hand has more than 2 DOFs.
         """
         lower_limits, upper_limits = self._or_robot.GetDOFLimits()
+        lower_limits = np.array(lower_limits)
+        joint_ranges = np.array(upper_limits) - lower_limits
         num_dofs = self._or_robot.GetDOF()
         actual_num_samples = self._num_samples
         if b_force_grid or num_dofs <= 2:
@@ -379,24 +399,23 @@ class ReachabilityKDTree(object):
             actual_num_samples = np.power(samples_per_dof, num_dofs)
             self._hand_configurations = np.array(np.meshgrid(*sample_values)).T.reshape((actual_num_samples, num_dofs))
         else:
-            lower_limits = np.array(lower_limits)
-            joint_ranges = np.array(upper_limits) - lower_limits
             random_data = np.random.rand(self._num_samples, num_dofs)
             self._hand_configurations = np.apply_along_axis(lambda row: lower_limits + row * joint_ranges, 1, random_data)
         self._codes = np.zeros((actual_num_samples, 2 * self._hand_params[NUM_FINGERTIPS_KEY]))
         logging.info('[ReachabilityKDTree::Evaluating %i hand configurations.' % actual_num_samples)
-        sample_idx = 0
         # now compute codes for all configurations
         with self._or_robot.GetEnv():
-            for sample in self._hand_configurations:
+            for sample_idx in xrange(self._num_samples):
+                sample = self._hand_configurations[sample_idx]
                 self._or_robot.SetDOFValues(sample)
-                if self._or_robot.CheckSelfCollision():
-                    continue
+                while self._or_robot.CheckSelfCollision():  # overwrite sample, if it is in collision
+                    sample = np.random.rand(1, num_dofs)[0] * joint_ranges + lower_limits
+                    self._or_robot.SetDOFValues(sample)
+                    self._hand_configurations[sample_idx] = sample
                 fingertip_contacts = self._or_robot.get_ori_tip_pn(sample)
                 handles = []
                 self.draw_contacts(fingertip_contacts, handles)
                 self._codes[sample_idx] = self._encode_grasp_non_normalized(fingertip_contacts)
-                sample_idx += 1
         # Normalize code
         self._min_code = np.min(self._codes, axis=0)
         self._max_code = np.max(self._codes, axis=0)
@@ -430,7 +449,7 @@ class ReachabilityKDTree(object):
         """
         position_diff = np.linalg.norm(contact_0[:3] - contact_1[:3])
         normal_diff = np.linalg.norm(contact_0[3:] - contact_1[3:])
-        return np.array([position_diff * self._code_position_weight, normal_diff])
+        return np.array([position_diff * self._hand_params[CODE_POSITION_WEIGHT_KEY], normal_diff])
 
     def predict_hand_conf(self, code):
         distance, index = self._kd_tree.query(code)

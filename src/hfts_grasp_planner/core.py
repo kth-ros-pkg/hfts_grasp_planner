@@ -236,10 +236,23 @@ class HFTSSampler(object):
             p, n = self.get_cluster_repr(contact_labels[i])
             contacts.append(list(p) + list(n))
         object_contacts = np.asarray(contacts)
+        grasp_conf, hand_contacts = self.compute_hand_config_and_contacts(object_contacts)
+        return grasp_conf, object_contacts, hand_contacts
+
+    def compute_hand_config_and_contacts(self, object_contacts):
+        """
+            Computes a hand configuration for the specified object contacts.
+            - :object_contacts: - numpy matrix of shape (#contacts, 6), where each row describes
+                                  a contact (pos, normal) on the object surface
+            - :returns: grasp_conf, hand_contacts
+                - grasp_conf - a hand configuration that may be suitable to reach the given contacts
+                - hand_contacts - numpy matrix of shape (#contacts, 6) where each row is the position and normal
+                              of a fingertip of the hand
+        """
         code_tmp = self._hand_manifold.encode_grasp(object_contacts)
         dummy, grasp_conf = self._hand_manifold.predict_hand_conf(code_tmp)
         hand_contacts = self._robot.get_ori_tip_pn(grasp_conf)
-        return grasp_conf, object_contacts, hand_contacts
+        return grasp_conf, hand_contacts
 
     def _debug_visualize_quality(self, labels, quality, handles):
         grasp_conf, object_contacts, hand_contacts = self.compose_grasp_info(labels)
@@ -296,7 +309,6 @@ class HFTSSampler(object):
             p, n = self.get_cluster_repr(contact_label[i])
             contacts.append(list(p) + list(n))
         contacts = np.asarray(contacts)
-        # self.draw_contacts(contacts)
         s_tmp = self._hand_manifold.compute_grasp_quality(self._obj_com, contacts)
         code_tmp = self._hand_manifold.encode_grasp(contacts)
         r_tmp, dummy = self._hand_manifold.predict_hand_conf(code_tmp)
@@ -305,8 +317,7 @@ class HFTSSampler(object):
         o_tmp = s_tmp - self._reachability_weight * r_tmp
         assert not math.isnan(o_tmp) and not math.isinf(math.fabs(o_tmp))
         # o_tmp = s_tmp / (r_tmp + 1.0)
-        # return s_tmp, r_tmp, o_tmp
-        return s_tmp, r_tmp, -r_tmp
+        return s_tmp, r_tmp, o_tmp
 
     def extend_hfts_node(self, old_labels, allowed_finger_combos=None):
         """
@@ -457,10 +468,8 @@ class HFTSSampler(object):
     def sample_grasp(self, node, depth_limit, post_opt=False, label_cache=None, open_hand_offset=0.1):
         if depth_limit < 0:
             raise ValueError('HFTSSampler::sample_grasp depth limit must be greater or equal to zero.')
-
         if node.get_depth() >= self._num_levels:
             raise ValueError('HFTSSampler::sample_grasp input node has an invalid depth')
-
         if node.get_depth() + depth_limit >= self._num_levels:
             depth_limit = self._num_levels - node.get_depth()  # cap
 
@@ -606,11 +615,16 @@ class HFTSSampler(object):
         return False, self._robot.GetDOFValues(), self._robot.GetTransform()
 
     def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False, swap_contacts=True):
-        # TODO this method as it is right now is only useful for the Robotiq hand.
         b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
         if not b_grasp_valid and swap_contacts:
-            self.swap_contacts([0, 1], object_contacts)
-            b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(grasp_conf, hand_contacts, object_contacts, post_opt)
+            for symmetry in self._robot.get_fingertip_symmetries():
+                self.swap_contacts(symmetry, object_contacts)
+                swapped_conf, swapped_hand_contacts = self.compute_hand_config_and_contacts(object_contacts)
+                b_grasp_valid, new_grasp_conf, grasp_pose = self._simulate_grasp(swapped_conf, swapped_hand_contacts, object_contacts, post_opt)
+                if b_grasp_valid:
+                    return b_grasp_valid, new_grasp_conf, grasp_pose
+                else:  # swap contacts back
+                    self.swap_contacts(symmetry, object_contacts)
         return b_grasp_valid, new_grasp_conf, grasp_pose
 
     @staticmethod
@@ -654,49 +668,50 @@ class HFTSSampler(object):
         transform = self._robot.GetTransform()
         angle, axis, point = hfts_grasp_planner.transformations.rotation_from_matrix(transform)
         # further optimize hand configuration and pose
-        # TODO this is Robotiq hand specific
         transform_params = axis.tolist() + [angle] + transform[:3, 3].tolist()
         robot_dofs = self._robot.GetDOFValues().tolist()
 
         def joint_limits_constraint(x, *args):
             positions, normals, robot = args
             lower_limits, upper_limits = robot.GetDOFLimits()
-            return -dist_in_range(x[0], [lower_limits[0], upper_limits[0]]) - \
-                   dist_in_range(x[1], [lower_limits[1], upper_limits[1]])
+            dists = [dist_in_range(x[i], [lower_limits[i], upper_limits[i]]) for i in range(robot.GetDOF())]
+            return -1.0 * sum(dists)
 
         def collision_free_constraint(x, *args):
             positions, normals, robot = args
-            config = [x[0], x[1]]
-            robot.SetDOFValues(config)
+            # config = [x[0], x[1]]
+            # robot.SetDOFValues(config)
+            robot.SetDOFValues(x[:robot.GetDOF()])
             env = robot.GetEnv()
             links = robot.get_non_fingertip_links()
             for link in links:
                 if env.CheckCollision(robot.GetLink(link)):
-                    return -1.0
+                    return -1.0  # TODO we could replace this with SDF based values
             return 0.0
 
         x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
-                                           [joint_limits_constraint, collision_free_constraint],
-                                           rhobeg=.5, rhoend=1e-3,
+                                           [joint_limits_constraint],
+                                           rhobeg=.1, rhoend=1e-4,
                                            args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot),
                                            maxfun=int(1e8), iprint=0)
-        self._robot.SetDOFValues(x_min[:2])
-        axis = x_min[2:5]
-        angle = x_min[5]
-        position = x_min[6:]
+        num_dofs = self._robot.GetDOF()
+        self._robot.SetDOFValues(x_min[:num_dofs])
+        axis = x_min[num_dofs:num_dofs + 3]
+        angle = x_min[num_dofs + 3]
+        position = x_min[num_dofs + 4:]
         transform = hfts_grasp_planner.transformations.rotation_matrix(angle, axis)
         transform[:3, 3] = position
         self._robot.SetTransform(transform)
 
     @staticmethod
     def _post_optimization_obj_fn(x, *params):
-        # TODO this is Robotiq hand specific
         desired_contact_points, desired_contact_normals, robot = params
-        dofs = x[:2]
+        num_dofs = robot.GetDOF()
+        dofs = x[:num_dofs]
         robot.SetDOFValues(dofs)
-        axis = x[2:5]
-        angle = x[5]
-        position = x[6:]
+        axis = x[num_dofs:num_dofs + 3]
+        angle = x[num_dofs + 3]
+        position = x[num_dofs + 4:]
         transform = hfts_grasp_planner.transformations.rotation_matrix(angle, axis)
         transform[:3, 3] = position
         robot.SetTransform(transform)
