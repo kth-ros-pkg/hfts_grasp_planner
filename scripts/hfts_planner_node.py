@@ -33,10 +33,12 @@ class HandlerClass(object):
         # Load hand and save joint names
         hand_file = package_path + rospy.get_param(rospy.get_name() + '/hand_file')
         hand_config_file = package_path + rospy.get_param(rospy.get_name() + '/hand_config_file')
+        hand_ball_file = package_path + rospy.get_param(rospy.get_name() + '/hand_ball_file')
         hand_cache_file = package_path + '/' + rospy.get_param(rospy.get_name() + '/hand_cache_file')
         self._planner.load_hand(hand_file=hand_file,
                                 hand_cache_file=hand_cache_file,
-                                hand_config_file=hand_config_file)
+                                hand_config_file=hand_config_file,
+                                hand_ball_file=hand_ball_file)
         or_hand = self._planner.get_or_hand()
         joints = or_hand.GetJoints()
         self._joint_names = []

@@ -15,3 +15,4 @@ open_hand_dir: [0.0, -0.3, -1.0, -0.3, -1.0, -0.3, -1.0]
 symmetries:
   - ['A3_Link', 'C3_Link']
 code_position_weight: 5.0
+bounding_radius: 0.2  # radius of a ball completely encompassing the hand

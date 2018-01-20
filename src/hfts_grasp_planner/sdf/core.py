@@ -97,11 +97,13 @@ class VoxelGrid(object):
     def load(self, file_name, b_restore_transform=False):
         """
             Loads a grid from the given file.
-            @param file_name - as the name suggests
-            @param b_restore_transform (optional) - If true, the transform is loaded as well, else identity transform is set
+            - :file_name: - as the name suggests
+            - :b_restore_transform: (optional) - If true, the transform is loaded as well, else identity transform is set
         """
         data_file_name = file_name + '.data.npy'
         meta_file_name = file_name + '.meta.npy'
+        if not os.path.exists(data_file_name) or not os.path.exists(meta_file_name):
+            raise IOError("Could not load grid for filename prefix " + file_name)
         self._cells = np.load(data_file_name)
         meta_data = np.load(meta_file_name)
         self._base_pos = meta_data[0]
@@ -375,23 +377,18 @@ class SDF(object):
     """
         This class represents a signed distance field.
     """
-    def __init__(self, file_name=None, grid=None):
+    def __init__(self, grid, approximation_box=None) :
         """
             Creates a new signed distance field.
             You may either create an SDF using a SDFBuilder to by loading it from file.
-            In the first case, you do not call this method manually.
-            In the latter case, you need to provide a file_name
-            @param file_name (optional) - a file to load this SDF from
-            @param grid (optional) - a VoxelGrid storing all signed distances - used by SDFBuilder
+            In neither case you will have to call this constructor yourself.
+            - :grid: a VoxelGrid storing all signed distances - used by SDFBuilder
+            - :approximation_box: a box used for approximating distances outside of the grid
         """
         self._grid = grid
-        self._approximation_box = None
+        self._approximation_box = approximation_box
         self._or_visualization = None
-        if self._grid is None:
-            if file_name is None:
-                raise ValueError("You need to provide a file name when creating an SDF manually")
-            self.load(file_name)
-        else:
+        if self._approximation_box is None and self._grid:
             self._approximation_box = self._grid.get_aabb()
 
     def set_transform(self, transform):
@@ -473,15 +470,25 @@ class SDF(object):
         meta_data = np.array([self._approximation_box])
         np.save(meta_file_name, meta_data)
 
-    def load(self, file_name):
+    @staticmethod
+    def load(filename):
         """
             Loads an sdf from file.
+            :return: the loaded sdf or None, if loading failed
         """
-        meta_data = np.load(file_name + '.meta.npy')
-        self._approximation_box = meta_data[0]
-        if self._grid is None:
-            self._grid = VoxelGrid(np.array([0, 0, 0, 0, 0, 0]))
-        self._grid.load(file_name + '.grid')
+        meta_data_filename = filename + '.meta.npy'
+        if not os.path.exists(meta_data_filename):
+            logging.warning("Could not load SDF because meta data file " + meta_data_filename + " does not exist")
+            return None
+        meta_data = np.load(meta_data_filename)
+        approximation_box = meta_data[0]
+        grid = VoxelGrid(np.array([0, 0, 0, 0, 0, 0]))
+        try:
+            grid.load(filename + '.grid')
+        except IOError as io_err:
+            logging.warning("Could not load SDF because:" + str(io_err))
+            return None
+        return SDF(grid=grid, approximation_box=approximation_box)
 
     def visualize(self, env, safe_distance=None):
         """
@@ -660,15 +667,34 @@ class SDFBuilder(object):
         """
         self._body_manager.clear()
 
+    @staticmethod
+    def compute_sdf_size(aabb, approx_error, radius=0.0):
+        """
+            Computes the required size of an sdf for a movable kinbody such
+            that at the boundary of the sdf the relative error in distance estimation to the body's
+            surface is bounded by approx_error.
+            - :aabb: OpenRAVE bounding box of the object
+            - :approx_error: Positive floating point number in (0, 1] denoting the maximal relative error
+            - :radius: (optional) a positive floating point number that is the radius of an inscribing ball
+                    centered at the object center
+            - :return: a bounding box in the shape [min_x, min_y, min_z, max_x, max_y, max_z]
+        """
+        scaling_factor = (1.0 - (1.0 - approx_error) * radius / np.linalg.norm(aabb.extents())) / approx_error
+        scaled_extents = scaling_factor * aabb.extents()
+        upper_point = aabb.pos() + scaled_extents
+        lower_point = aabb.pos() - scaled_extents
+        return np.array([lower_point[0], lower_point[1], lower_point[2],
+                         upper_point[0], upper_point[1], upper_point[2]])
 
 class SceneSDF(object):
     """
         A scene sdf is a signed distance field for a motion planning scene that contains
-        a robot, multiple movable kinbodies and a set of static obstacles.
+        multiple movable kinbodies (including a robot) and a potentially empty set of static obstacles.
         A scene sdf creates separate sdfs for the static obstacles and the movable objects.
-        When querying a scene sdf, the resturned distance takes the current state of the environment,
-        i.e. the current poses of all movable kinbodies into account.
-        The robot is not considered in the distance field.
+        When querying a scene sdf, the returned distance takes the current state of the environment,
+        i.e. the current poses of all movable kinbodies into account. Kinbodies with more degrees of freedom
+        are currently not supported, i.e. robots should always be excluded if they are expected to change their
+        configuration.
     """
     def __init__(self, env, movable_body_names, excluded_bodies=None, sdf_paths=None, radii=None):
         """
@@ -676,20 +702,20 @@ class SceneSDF(object):
             either call load_sdf or create_sdf.
             @param env - OpenRAVE environment to use
             @param movable_body_names - list of names of kinbodies that can move
-            @param excluded_bodies - a list of kinbody names to exclude, i.e. completely ignore
+            @param excluded_bodies - a list of kinbody names to exclude, i.e. completely ignore for instance a robot
             @param sdf_paths - optionally a dictionary that maps kinbody name to filename to
                                load an sdf from for that body
             @param radii - optionally a dictionary that maps kinbody name to a radius
                            of an inscribing ball
         """
         self._env = env
-        self._movable_body_names = movable_body_names
+        self._movable_body_names = list(movable_body_names)
         if excluded_bodies is None:
             excluded_bodies = []
-        self._ignored_body_names = excluded_bodies
+        self._ignored_body_names = list(excluded_bodies)
         self._static_sdf = None
         self._body_sdfs = {}
-        self._sdf_paths = None
+        self._sdf_paths = sdf_paths
         self._radii = None
 
     def _enable_body(self, name, b_enabled):
@@ -710,12 +736,7 @@ class SceneSDF(object):
         radius = 0.0
         if self._radii is not None and body_name in self._radii:
             radius = self._radii[body_name]
-        scaling_factor = (1.0 - (1.0 - approx_error) * radius / np.linalg.norm(aabb.extents())) / approx_error
-        scaled_extents = scaling_factor * aabb.extents()
-        upper_point = aabb.pos() + scaled_extents
-        lower_point = aabb.pos() - scaled_extents
-        return np.array([lower_point[0], lower_point[1], lower_point[2],
-                         upper_point[0], upper_point[1], upper_point[2]])
+        return SDFBuilder.compute_sdf_size(aabb, approx_error, radius)
 
     def create_sdf(self, workspace_bounds, static_resolution=0.02, moveable_resolution=0.02,
                    approx_error=0.1):
@@ -733,12 +754,14 @@ class SceneSDF(object):
             body_enable_status[body.GetName()] = body.IsEnabled()
         # now first we build a sdf for the static obstacles
         builder = SDFBuilder(self._env, static_resolution)
-        # for that disable all bodies that we ignore and all movable objects
         for body_name in self._ignored_body_names:
             self._enable_body(body_name, False)
-        for body_name in self._movable_body_names:
-            self._enable_body(body_name, False)
-        self._static_sdf = builder.create_sdf(workspace_bounds)
+        # it only makes sense to build a static sdf, if we have static obstacles
+        if len(self._ignored_body_names) + len(self._movable_body_names) < len(self._env.GetBodies()):
+            # for that disable all movable objects
+            for body_name in self._movable_body_names:
+                self._enable_body(body_name, False)
+            self._static_sdf = builder.create_sdf(workspace_bounds)
         # Now we build SDFs for all movable object
         # if we have different resolutions for static and movables, we need a new builder
         if static_resolution != moveable_resolution:
@@ -749,13 +772,14 @@ class SceneSDF(object):
             body.Enable(False)
         # Next create for each movable body an individual sdf
         for body_name in self._movable_body_names:
-            new_sdf = None
-            body = None
-            # if we do not have an sdf to load for this body, create it
-            if self._sdf_paths is None or body_name not in self._sdf_paths:
+            body_sdf = None
+            body = self._env.GetKinBody(body_name)
+            if self._sdf_paths is not None and body_name in self._sdf_paths:  # we have a path for a body sdf
+                # load an sdf
+                body_sdf = SDF.load(self._sdf_paths[body_name])
+            # if we do not have an sdf to load for this body or failed at doing so, create a new
+            if body_sdf is None:
                 # Prepare sdf creation for this body
-                # the body exists, otherwise we would have crashed before
-                body = self._env.GetKinBody(body_name)
                 body.Enable(True)
                 old_tf = body.GetTransform()
                 body.SetTransform(np.eye(4))  # set it to the origin
@@ -766,15 +790,14 @@ class SceneSDF(object):
                 # Compute the size of the sdf that we need to ensure the maximum relative error
                 sdf_bounds = self._compute_sdf_size(aabb, approx_error, body_name)
                 # create the sdf
-                new_sdf = builder.create_sdf(sdf_bounds)
-                new_sdf.set_approximation_box(body_bounds)  # set the actual body aabb as approx box
+                body_sdf = builder.create_sdf(sdf_bounds)
+                body_sdf.set_approximation_box(body_bounds)  # set the actual body aabb as approx box
                 body.SetTransform(old_tf)  # restore transform
                 body.Enable(False)  # disable body again
-            else:  # if self._sdf_paths is not None and body_name in self._sdf_paths
-                # else load an sdf
-                new_sdf = SDF(self._sdf_paths[body_name])
-                body = self._env.GetKinBody(body_name)
-            self._body_sdfs[body_name] = (body, new_sdf)
+                # finally, if we have a body path for this body, store it
+                if body_name in self._sdf_paths:
+                    body_sdf.save(self._sdf_paths[body_name])
+            self._body_sdfs[body_name] = (body, body_sdf)
         builder.clear()
         # Finally enable all bodies
         for body in self._env.GetBodies():
@@ -788,7 +811,9 @@ class SceneSDF(object):
         for (body, body_sdf) in self._body_sdfs.itervalues():
             body_sdf.set_transform(body.GetTransform())
             min_distance = min(min_distance, body_sdf.get_distance(position))
-        return min(self._static_sdf.get_distance(position), min_distance)
+        if self._static_sdf is not None:
+            min_distance = min(self._static_sdf.get_distance(position), min_distance)
+        return min_distance
 
     def get_distances(self, positions):
         """
@@ -801,7 +826,9 @@ class SceneSDF(object):
         for (body, body_sdf) in self._body_sdfs.itervalues():
             body_sdf.set_transform(body.GetTransform())
             min_distances = np.minimum(min_distances, body_sdf.get_distances(positions))
-        return np.minimum(min_distances, self._static_sdf.get_distances(positions))
+        if self._static_sdf is not None:
+            min_distances = np.minimum(min_distances, self._static_sdf.get_distances(positions))
+        return min_distances
 
     def save(self, filename, body_dir=None):
         """
@@ -818,14 +845,17 @@ class SceneSDF(object):
             body_dir = '.'
         if self._sdf_paths is None:
             self._sdf_paths = {}
-        static_file_name = base_name + '.static.sdf'
-        static_file_path = dir_name + '/' + static_file_name
         # now build a dictionary mapping body name to sdf (static for static sdf) and save sdfs
-        # TODO We could have a name collision here, if the environment contains a kinbody called static
-        sdf_paths = {'static': static_file_path}
-        rel_paths = {'static': './' + static_file_name}
-        if 'static' not in self._sdf_paths:
-            self._static_sdf.save(static_file_path)
+        sdf_paths = {}
+        rel_paths = {}
+        if self._static_sdf:
+            static_file_name = base_name + '.static.sdf'
+            static_file_path = dir_name + '/' + static_file_name
+            # TODO We could have a name collision here, if the environment contains a kinbody called static
+            sdf_paths['__static_sdf__'] = static_file_path
+            rel_paths['__static_sdf__'] = 'static_sdf' + './' + static_file_name
+            if '__static_sdf__' not in self._sdf_paths:
+                self._static_sdf.save(static_file_path)
         for (key, value) in self._sdf_paths:  # reuse the filenames we loaded things from
             sdf_paths[key] = value
         for (body, body_sdf) in self._body_sdfs.itervalues():
@@ -848,6 +878,7 @@ class SceneSDF(object):
         dir_name = os.path.dirname(filename)
         with open(filename, 'r') as meta_file:
             self._body_sdfs = {}
+            self._static_sdf = None
             # first read in realtive paths and make them absolute
             rel_paths = yaml.load(meta_file)
             self._sdf_paths = {}
@@ -856,7 +887,7 @@ class SceneSDF(object):
             # next read in sdfs
             available_sdfs = {}
             for (name, path) in self._sdf_paths.iteritems():
-                if name != 'static':
+                if name != '__static_sdf__':
                     body = self._env.GetKinBody(name)
                     if body is None:
                         logging.log(logging.ERROR, "Could not find kinbody %s" % name)
@@ -865,13 +896,13 @@ class SceneSDF(object):
                     available_sdfs[name] = True
                 else:
                     self._static_sdf = SDF(path)
-                    available_sdfs['static'] = True
+                    available_sdfs['__static_sdf__'] = True
             # verify we have all movable bodies
             for name in self._movable_body_names:
                 if name not in available_sdfs:
-                    raise ValueError("Could not load sdf for kinbody %s" % name)
-            if 'static' not in available_sdfs:
-                raise ValueError("Could not load sdf for static environment")
+                    raise IOError("Could not load sdf for kinbody %s" % name)
+            if '__static_sdf__' not in available_sdfs and len(self._movable_body_names) < len(self._env.GetBodies()):
+                raise IOError("Could not load sdf for static environment")
 
 class ORSDFVisualization(object):
     """

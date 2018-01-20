@@ -4,7 +4,7 @@
 """
 import yaml
 import numpy as np
-# from . import core
+from hfts_grasp_planner.sdf.core import SceneSDF
 
 class RobotSDF(object):
     """
@@ -12,17 +12,21 @@ class RobotSDF(object):
         It utilizes a set of balls to approximate a robot and provides access functions
         to acquire the shortest distance of each ball to the closest obstacle.
         In order to instantiate an object of this class, you need a signed distance field
-        for the OpenRAVE scene the robot is embedded in as well as description file
+        for the OpenRAVE scene the robot is embedded in as well as a description file
         containing the definition of the approximating balls.
     """
-    def __init__(self, robot, scene_sdf):
+    def __init__(self, robot, scene_sdf=None):
         """
             Creates a new RobotSDF.
             NOTE: Before you can use this object, you need to provide it with a ball approximation.
             @param robot - OpenRAVE robot this sdf should operate on
-            @param scene_sdf - A SceneSDF for the given environment.
+            @param scene_sdf (optional) - A SceneSDF for the given environment. If not provided,
+                            at construction, it must be provided by calling set_sdf(..) before this
+                            class can be used.
         """
         self._robot = robot
+        if scene_sdf is not None and not isinstance(scene_sdf, SceneSDF):
+            raise TypeError("The provided sdf object must be a SceneSDF")
         self._sdf = scene_sdf
         self._handles = []  # list of openrave handles for visualization
         # ball_positoins stores one large matrix of shape (n, 4), where n is the number of balls we have
@@ -79,11 +83,20 @@ class RobotSDF(object):
                 # for links that don't have any balls we need to store None so we can index ball_indices easily
                 self._ball_indices.append(None)
 
+    def set_sdf(self, sdf):
+        """
+            Sets the scene sdf to use.
+            - :sdf: must be of type SceneSDF
+        """
+        if not isinstance(sdf, SceneSDF):
+            raise TypeError("The provided sdf object must be a SceneSDF")
+        self._sdf = sdf
+
     def get_distances(self):
         """
             Returns the distances of all balls to the respective closest obstacle.
         """
-        if self._ball_positions is None:
+        if self._ball_positions is None or self._sdf is None:
             return None
         link_tfs = self._robot.GetLinkTransformations()
         for link_idx in self._link_indices:

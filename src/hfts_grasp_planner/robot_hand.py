@@ -28,6 +28,7 @@ UPPER_LIMIT_KEY = 'upper_limit'
 LOWER_LIMIT_KEY = 'lower_limit'
 SYMMETRIES_KEY = 'symmetries'
 CODE_POSITION_WEIGHT_KEY = 'code_position_weight'
+BOUNDING_RADIUS_KEY = 'bounding_radius'
 NUMERICAL_EPSILON = 0.000001
 
 
@@ -122,6 +123,9 @@ class RobotHand(object):
         """
         return self._hand_mani
 
+    def get_bounding_radius(self):
+        return self._hand_params[BOUNDING_RADIUS_KEY]
+
     def plot_fingertip_contacts(self):
         """
             Render the contact points for this hand.
@@ -183,18 +187,6 @@ class RobotHand(object):
         self._or_hand.SetDOFValues(prev_conf)
         self._or_hand.SetTransform(prev_tf)
         return result
-
-    # def set_random_conf(self):
-    #     self._lower_limits, self._upper_limits = self._or_hand.GetDOFLimits()
-    #     self._upper_limits[1] = 0.93124747
-    #     self_collision = True
-
-    #     while self_collision:
-    #         ret = []
-    #         for i in range(2):
-    #             ret.append(np.random.uniform(self._lower_limits[i], self._upper_limits[i]))
-    #         self.SetDOFValues(ret)
-    #         self_collision = self._or_hand.CheckSelfCollision()
 
     def get_contact_number(self):
         """

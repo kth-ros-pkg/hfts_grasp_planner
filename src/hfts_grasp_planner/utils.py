@@ -24,6 +24,10 @@ DEFAULT_HFTS_GENERATION_PARAMS = {'max_normal_variance': 0.2,
                                   'branching_factor': 4,
                                   'first_level_branching_factor': 3}
 
+DEFAULT_SDF_GENERATION_PARAMS = {'static_sdf_resolution': 0.02,
+                                 'sdf_resolution': 0.02,
+                                 'max_rel_approx_error': 0.1}
+
 
 class ObjectIO(object):
     __metaclass__ = ABCMeta
@@ -40,10 +44,12 @@ class ObjectIO(object):
 class ObjectFileIO(ObjectIO):
     def __init__(self, data_path, var_filter=True,
                  hfts_generation_parameters=DEFAULT_HFTS_GENERATION_PARAMS,
+                 sdf_generation_parameters=DEFAULT_SDF_GENERATION_PARAMS,
                  max_num_points=10000):
         self._data_path = data_path
         self._b_var_filter = var_filter
         self._hfts_generation_params = hfts_generation_parameters
+        self._sdf_generation_params = sdf_generation_parameters
         self._max_num_points = max_num_points
         self._last_obj_id = None
         self._last_hfts = None
@@ -83,6 +89,35 @@ class ObjectFileIO(ObjectIO):
                          ' file for object ' + obj_id)
             com = None
         return points, com
+
+    def get_object_sdf_path(self, obj_id):
+        return self._data_path + '/' + obj_id + '/' + obj_id + '.sdf'
+
+    # def get_object_sdf(self, obj_id):
+    #     """
+    #         Attempts to load a signed distance field for the given object name.
+    #         If there is no precomputed sdf available, a new one is generated.
+    #     """
+    #     sdf_filename = self._data_path + '/' + obj_id + '/' + obj_id + '.sdf'
+    #     object_sdf = None
+    #     try:
+    #         object_sdf = sdf_module.SDF(sdf_filename)
+    #     except IOError as e:
+    #         # create a new sdf for this object
+    #         env = orpy.Environment()
+    #         env.Load(self.get_openrave_file_name(obj_id))
+    #         object_body = env.GetKinBody(obj_id)
+    #         object_body.SetTransform(np.eye(4))
+    #         resolution = extract_sdf_gen_parameter(self._sdf_generation_params, 'sdf_resolution')
+    #         builder = sdf_module.SDFBuilder(env, resolution)
+    #         aabb = object_body.ComputeAABB()
+    #         body_bounds = np.zeros(6)
+    #         body_bounds[:3] = aabb.pos() - aabb.extents()
+    #         body_bounds[3:] = aabb.pos() + aabb.extents()
+    #         approx_error = extract_sdf_gen_parameter(self._sdf_generation_params, 'max_rel_approx_error')
+    #         object_sdf = builder.create_sdf(sdf_module.SDFBuilder.compute_sdf_size(aabb, approx_error))
+    #         object_sdf.set_approximation_box(body_bounds)
+    #     return object_sdf
 
     def get_obj_file_extension(self, obj_id):
         obj_file = self._data_path + '/' + obj_id + '/objectModel'
@@ -196,6 +231,15 @@ def extract_hfts_gen_parameter(param_dict, name):
         return DEFAULT_HFTS_GENERATION_PARAMS[name]
     else:
         raise ValueError('[utils::extract_hfts_gen_parameter] Unknown HFTS generation parameter ' + str(name))
+
+
+def extract_sdf_gen_parameter(param_dict, name):
+    if name in param_dict:
+        return param_dict[name]
+    elif name in DEFAULT_SDF_GENERATION_PARAMS:
+        return DEFAULT_SDF_GENERATION_PARAMS[name]
+    else:
+        raise ValueError('[utils::extract_sdf_gen_parameter] Unknown SDF generation parameter ' + str(name))
 
 
 def clamp(values, min_values, max_values):

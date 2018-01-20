@@ -9,6 +9,9 @@ import copy
 from scipy.spatial import KDTree
 import openravepy as orpy
 import hfts_grasp_planner.transformations
+from hfts_grasp_planner.sdf.core import SceneSDF
+from hfts_grasp_planner.sdf.robot import RobotSDF
+from hfts_grasp_planner.sdf.costs import DistanceToFreeSpace
 from hfts_grasp_planner.robot_hand import RobotHand, InvalidTriangleException
 import itertools
 from hfts_grasp_planner.utils import ObjectFileIO, clamp, compute_grasp_stability, normal_distance, position_distance, dist_in_range
@@ -129,6 +132,7 @@ class HFTSSampler(object):
         # TODO make #hops setable again. At the moment only 2 hops are supported
         self._hops = 2
         self._robot = None
+        self._robot_sdf = None
         self._obj = None
         self._obj_com = None
         self._data_labeled = None
@@ -429,10 +433,22 @@ class HFTSSampler(object):
                 return False
         return True
 
-    def load_hand(self, hand_file, hand_cache_file, hand_config_file):
+    def load_hand(self, hand_file, hand_cache_file, hand_config_file, hand_ball_file):
+        """
+            Loads a hand into the scene. If there is already a hand in the scene,
+            this function does not do anything, i.e. you can not replace a hand once loaded.
+            - :hand_file: filename of the openrave model of the hand
+            - :hand_cache_file: filename where hand reachability data is/can be stored
+            - :hand_config_file: filename of YAML file containing additional information for the
+               given hand
+            - :hand_ball_file: filename of YAML file containing a ball approximation of the given
+                                hand
+        """
         if not self._hand_loaded:
             self._robot = RobotHand(env=self._orEnv, cache_file=hand_cache_file,
                                     or_hand_file=hand_file, hand_config_file=hand_config_file)
+            self._robot_sdf = RobotSDF(self._robot)
+            self._robot_sdf.load_approximation(hand_ball_file)
             self._hand_manifold = self._robot.get_hand_manifold()
             self._hand_manifold.load()
             self._num_contacts = self._robot.get_contact_number()
@@ -443,6 +459,17 @@ class HFTSSampler(object):
             self._hand_loaded = True
 
     def load_object(self, obj_id, model_id=None):
+        """
+            Loads the object with the given name and model name into the hand planning
+            scene.
+            :NOTE: There must be hand loaded before you can load objects into the scene!
+            - :obj_id: name of the object
+            - :model_id: (optional), class name of the object, assumed to be equal to obj_id if
+                        not provided
+        """
+        if not self._hand_loaded:
+            raise RuntimeError('Could not load object because there is no robot loaded yet.' +
+                               'You need to load a robot hand first!')
         if model_id is None:
             model_id = obj_id
         self._data_labeled, self._branching_factors, self._obj_com = \
@@ -454,16 +481,37 @@ class HFTSSampler(object):
         # First, delete old object if there is any
         if self._obj_loaded:
             self._orEnv.Remove(self._obj)
+        bodies_before = [body.GetName() for body in self._orEnv.GetBodies()]
         or_file_name = self._object_io_interface.get_openrave_file_name(model_id)
         self._obj_loaded = self._orEnv.Load(or_file_name)
         if not self._obj_loaded:
             raise RuntimeError('Could not load object model %s in OpenRAVE' % model_id)
-        self._obj = self._orEnv.GetKinBody('objectModel')
+        bodies_after = [body.GetName() for body in self._orEnv.GetBodies()]
+        new_bodies = [body_name for body_name in bodies_after if body_name not in bodies_before]
+        if len(new_bodies) > 1:
+            raise RuntimeError('When loading object model %s we loaded more than one object' % model_id)
+        or_obj_name = new_bodies[0]
+        self._obj = self._orEnv.GetKinBody(or_obj_name)
         rospy.loginfo('Object loaded in OpenRAVE environment')
         if self._scene_interface is not None:
             self._scene_interface.set_target_object(obj_id)
         self.compute_contact_combinations()
+        # load scene sdf for object
+        self._load_sdf(obj_id, or_obj_name)
         self._obj_loaded = True
+
+    def _load_sdf(self, obj_id, or_obj_name):
+        """
+            Loads the scene sdf for this object id. Assumes that everything else is already loaded
+            - :obj_id: identifier of the object
+            - :or_obj_name: name of the kinbody in the OpenRAVE environment
+        """
+        scene_sdf = SceneSDF(self._orEnv, movable_body_names=[or_obj_name], excluded_bodies=[self._robot.GetName()],
+                             sdf_paths={or_obj_name: self._object_io_interface.get_object_sdf_path(obj_id)})
+        object_aabb = self._obj.ComputeAABB()
+        aabb = orpy.AABB(np.array((0, 0, 0)), np.array(3*[self._robot.get_bounding_radius()]) + object_aabb.extents())
+        scene_sdf.create_sdf(aabb)
+        self._robot_sdf.set_sdf(scene_sdf)
 
     def sample_grasp(self, node, depth_limit, post_opt=False, label_cache=None, open_hand_offset=0.1):
         if depth_limit < 0:
@@ -672,27 +720,29 @@ class HFTSSampler(object):
         robot_dofs = self._robot.GetDOFValues().tolist()
 
         def joint_limits_constraint(x, *args):
-            positions, normals, robot = args
+            positions, normals, robot, collision_dist = args
             lower_limits, upper_limits = robot.GetDOFLimits()
             dists = [dist_in_range(x[i], [lower_limits[i], upper_limits[i]]) for i in range(robot.GetDOF())]
             return -1.0 * sum(dists)
 
         def collision_free_constraint(x, *args):
-            positions, normals, robot = args
+            positions, normals, robot, collision_dist = args
+            return -collision_dist.get_distance_to_free_space(x[:robot.GetDOF()])
             # config = [x[0], x[1]]
             # robot.SetDOFValues(config)
-            robot.SetDOFValues(x[:robot.GetDOF()])
-            env = robot.GetEnv()
-            links = robot.get_non_fingertip_links()
-            for link in links:
-                if env.CheckCollision(robot.GetLink(link)):
-                    return -1.0  # TODO we could replace this with SDF based values
-            return 0.0
+            # robot.SetDOFValues(x[:robot.GetDOF()])
+            # env = robot.GetEnv()
+            # links = robot.get_non_fingertip_links()
+            # for link in links:
+            #     if env.CheckCollision(robot.GetLink(link)):
+            #         return -1.0  # TODO we could replace this with SDF based values
+            # return 0.0
 
+        collision_dist = DistanceToFreeSpace(self._robot, self._robot_sdf, safety_margin=0.005)
         x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
                                            [joint_limits_constraint],
                                            rhobeg=.1, rhoend=1e-4,
-                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot),
+                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot, collision_dist),
                                            maxfun=int(1e8), iprint=0)
         num_dofs = self._robot.GetDOF()
         self._robot.SetDOFValues(x_min[:num_dofs])
@@ -702,10 +752,16 @@ class HFTSSampler(object):
         transform = hfts_grasp_planner.transformations.rotation_matrix(angle, axis)
         transform[:3, 3] = position
         self._robot.SetTransform(transform)
+        x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn2, robot_dofs,
+                                           [joint_limits_constraint],
+                                           rhobeg=.1, rhoend=1e-4,
+                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot, collision_dist),
+                                           maxfun=int(1e8), iprint=0)
+        self._robot.SetDOFValues(x_min[:num_dofs])
 
     @staticmethod
     def _post_optimization_obj_fn(x, *params):
-        desired_contact_points, desired_contact_normals, robot = params
+        desired_contact_points, desired_contact_normals, robot, collision_dist = params
         num_dofs = robot.GetDOF()
         dofs = x[:num_dofs]
         robot.SetDOFValues(dofs)
@@ -720,7 +776,12 @@ class HFTSSampler(object):
         temp_normals = contacts[:, 3:]
         pos_err = position_distance(desired_contact_points, temp_positions)
         normal_err = normal_distance(desired_contact_normals, temp_normals)
-        return pos_err + normal_err
+        return pos_err + 0.01 * normal_err
+
+    @staticmethod
+    def _post_optimization_obj_fn2(x, *params):
+        desired_contact_points, desired_contact_normals, robot, collision_dist = params
+        return collision_dist.get_distance_to_free_space(x[:robot.GetDOF()])
 
 
 class HFTSNode:

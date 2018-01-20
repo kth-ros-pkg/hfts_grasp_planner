@@ -19,13 +19,14 @@ class HFTSNodeDataExtractor:
 class GraspGoalSampler:
     """ Wrapper class for the HFTS Grasp Planner/Sampler that allows a full black box usage."""
 
-    def __init__(self, object_io_interface, hand_path, hand_cache_file, hand_config_file,
+    def __init__(self, object_io_interface, hand_path, hand_cache_file, hand_config_file, hand_ball_file,
                  planning_scene_interface, visualize=False, open_hand_offset=0.1):
         """ Creates a new wrapper.
             @param object_io_interface IOObject Object that handles IO requests
             @param hand_path Path to OpenRAVE hand file
             :hand_cache_file: Path to where the hand specific data is/can be stored.
             :hand_config_file: Path to hand configuration file containing required additional hand information
+            :hand_ball_file: Path to hand ball file containing ball approximations of hand
             @param planning_scene_interface OpenRAVE environment with some additional information
                                             containing the robot and its surroundings.
             @param visualize If true, the internal OpenRAVE environment is set to be visualized
@@ -39,7 +40,7 @@ class GraspGoalSampler:
         self.grasp_planner.set_max_iter(100)
         self.open_hand_offset = open_hand_offset
         self.root_node = self.grasp_planner.get_root_node()
-        self.load_hand(hand_path, hand_cache_file)
+        self.load_hand(hand_path, hand_cache_file, hand_config_file, hand_ball_file)
 
     def sample(self, depth_limit, post_opt=True):
         """ Samples a grasp from the root level. """
@@ -62,11 +63,12 @@ class GraspGoalSampler:
         """ Returns whether the given node is a goal or not. """
         return sampling_result.hierarchyInfo.is_goal()
 
-    def load_hand(self, hand_path, hand_cache_file, hand_config_file):
+    def load_hand(self, hand_path, hand_cache_file, hand_config_file, hand_ball_file):
         """ Reset the hand being used. @see __init__ for parameter description. """
         self.grasp_planner.load_hand(hand_file=hand_path,
                                      hand_cache_file=hand_cache_file,
-                                     hand_config_file=hand_config_file)
+                                     hand_config_file=hand_config_file,
+                                     hand_ball_file=hand_ball_file)
 
     def set_object(self, obj_id, model_id=None):
         """ Set the object.

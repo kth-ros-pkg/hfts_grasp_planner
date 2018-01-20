@@ -17,3 +17,4 @@ lower_limit: [-0.192, 0.0495]  # optional
 symmetries: # optional
   - ['finger_1_link_3', 'finger_2_link_3']
 code_position_weight: 1.0
+bounding_radius: 0.1  # radius of a ball completely encompassing the hand

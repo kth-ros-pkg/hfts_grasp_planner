@@ -2,3 +2,4 @@ visualize: True
 hand_cache_file: data/cache/robotiq_hand.npy
 hand_file: /models/robotiq/urdf_openrave_conversion/robotiq_s_thin.xml
 hand_config_file: /models/robotiq/hand_config.yaml
+hand_ball_file: /models/robotiq/ball_description.yaml
