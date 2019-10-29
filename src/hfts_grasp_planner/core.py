@@ -524,12 +524,12 @@ class HFTSSampler(object):
         # First, determine a hand configuration and the contact locations
         grasp_conf, object_contacts, hand_contacts = self.compose_grasp_info(contact_label)
         # Simulate the grasp and do local adjustments
-        b_robotiq_ok, grasp_conf, grasp_pose = self.simulate_grasp(grasp_conf=grasp_conf,
-                                                                   hand_contacts=hand_contacts,
-                                                                   object_contacts=object_contacts,
-                                                                   post_opt=post_opt,
-                                                                   swap_contacts=label_cache is None)
-        if b_robotiq_ok:
+        grasp_valid, grasp_conf, grasp_pose = self.simulate_grasp(grasp_conf=grasp_conf,
+                                                                  hand_contacts=hand_contacts,
+                                                                  object_contacts=object_contacts,
+                                                                  post_opt=post_opt,
+                                                                  swap_contacts=label_cache is None)
+        if grasp_valid:
             sample_q = 0
             stability = best_o
         else:
@@ -549,11 +549,11 @@ class HFTSSampler(object):
                 grasp_conf = self._robot.GetDOFValues()
                 open_hand_offset = 0.0
 
-        logging.debug('[HFTSSampler::sample_grasp] We sampled a grasp on level ' + str(len(contact_label[0])))
+        rospy.logdebug('[HFTSSampler::sample_grasp] We sampled a grasp on level ' + str(len(contact_label[0])))
         if is_goal_sample:
-            logging.debug('[HFTSSampler::sample_grasp] We sampled a goal grasp (might be in collision)!')
+            rospy.logdebug('[HFTSSampler::sample_grasp] We sampled a goal grasp (might be in collision)!')
         if is_leaf:
-            logging.debug('[HFTSSampler::sample_grasp] We sampled a leaf')
+            rospy.logdebug('[HFTSSampler::sample_grasp] We sampled a leaf')
 
         if grasp_conf is not None and grasp_pose is not None:
             collision_free_arm_ik, arm_conf, pre_grasp_conf = \
@@ -609,9 +609,12 @@ class HFTSSampler(object):
             self._post_optimization(object_contacts)
         open_success, tips_in_contact = self._robot.comply_fingertips()
         if not open_success or not tips_in_contact:
+            rospy.logdebug("Grasp not feasible - open_sucess %s, tips_in_contact %s " % (open_success, tips_in_contact))
             return False, self._robot.GetDOFValues(), self._robot.GetTransform()
         if self.check_grasp_validity():
             return True, self._robot.GetDOFValues(), self._robot.GetTransform()
+        else:
+            rospy.logdebug("Grasp is not stable")
         return False, self._robot.GetDOFValues(), self._robot.GetTransform()
 
     def simulate_grasp(self, grasp_conf, hand_contacts, object_contacts, post_opt=False, swap_contacts=True):
@@ -669,6 +672,7 @@ class HFTSSampler(object):
         angle, axis, point = hfts_grasp_planner.transformations.rotation_from_matrix(transform)
         # further optimize hand configuration and pose
         transform_params = axis.tolist() + [angle] + transform[:3, 3].tolist()
+        self._robot.avoid_collision_at_fingers(100)
         robot_dofs = self._robot.GetDOFValues().tolist()
 
         def joint_limits_constraint(x, *args):
@@ -689,11 +693,23 @@ class HFTSSampler(object):
                     return -1.0  # TODO we could replace this with SDF based values
             return 0.0
 
-        x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
-                                           [joint_limits_constraint],
-                                           rhobeg=.1, rhoend=1e-4,
-                                           args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot),
-                                           maxfun=int(1e8), iprint=0)
+        # x_min = scipy.optimize.fmin_cobyla(self._post_optimization_obj_fn, robot_dofs + transform_params,
+        #                                    [joint_limits_constraint],
+        #                                    rhobeg=.1, rhoend=1e-4,
+        #                                    args=(grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot),
+        #                                    maxfun=int(1e8), iprint=0)
+        args = (grasp_contacts[:, :3], grasp_contacts[:, 3:], self._robot)
+        x0 = robot_dofs + transform_params
+        result = scipy.optimize.minimize(self._post_optimization_obj_fn,
+                                         x0=x0,
+                                         args=args,
+                                         method="COBYLA",
+                                         constraints=[{'type': 'ineq', 'fun': joint_limits_constraint, 'args': args}])
+                                                    #   {'type': 'eq', 'fun': collision_free_constraint, 'args': args}])
+        if result.success:
+            x_min = result.x
+        else:
+            x_min = x0
         num_dofs = self._robot.GetDOF()
         self._robot.SetDOFValues(x_min[:num_dofs])
         axis = x_min[num_dofs:num_dofs + 3]
@@ -720,7 +736,7 @@ class HFTSSampler(object):
         temp_normals = contacts[:, 3:]
         pos_err = position_distance(desired_contact_points, temp_positions)
         normal_err = normal_distance(desired_contact_normals, temp_normals)
-        return pos_err + normal_err
+        return pos_err + 0.01 * normal_err
 
 
 class HFTSNode:

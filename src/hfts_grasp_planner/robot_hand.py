@@ -17,18 +17,29 @@ class InvalidTriangleException(Exception):
     def __str__(self):
         return repr(self.value)
 
-FINGERTIP_TRANSFORMS_KEY = 'fingertip_transforms'
-POSITION_KEY = 'position'
-ORIENTATION_KEY = 'orientation'
-NUM_FINGERTIPS_KEY = 'num_fingertips'
-FINGERTIP_LINK_NAMES_KEY = 'fingertip_link_names'
-OTHER_LINK_NAMES_KEY = 'other_link_names'
-OPEN_HAND_DIR_KEY = 'open_hand_dir'
-UPPER_LIMIT_KEY = 'upper_limit'
-LOWER_LIMIT_KEY = 'lower_limit'
-SYMMETRIES_KEY = 'symmetries'
-CODE_POSITION_WEIGHT_KEY = 'code_position_weight'
+
 NUMERICAL_EPSILON = 0.000001
+TF_KEY = 0
+LINKS_KEY = 1
+JOINTS_KEY = 2
+OPEN_DIR_KEY = 3
+DOF_INDICES_KEY = 4
+
+
+def _compute_step_size(limits, config, direction, n_steps):
+    # compute step size
+    pos_dir_indices = np.where(direction > 0)[0]
+    if pos_dir_indices.shape[0] > 0:
+        step_size_up = 1.0 / n_steps * np.max((limits[1] - config)[pos_dir_indices])
+    else:
+        step_size_up = 0.0
+    neg_dir_indices = np.where(direction < 0)[0]
+    if neg_dir_indices.shape[0] > 0:
+        step_size_down = 1.0 / n_steps * np.max((config - limits[0])[neg_dir_indices])
+    else:
+        step_size_down = 0.0
+    step_size = max(step_size_up, step_size_down)
+    return step_size
 
 
 class RobotHand(object):
@@ -44,16 +55,20 @@ class RobotHand(object):
         self._or_env.Load(or_hand_file)
         self._or_hand = self._or_env.GetRobots()[0]
         self._plot_handles = []
-        self._hand_params = self._load_config(hand_config_file)
-        self._fingertip_tfs = self._compute_fn_transforms()
-        self._limits = self._get_limits()
-        self._hand_mani = ReachabilityKDTree(self, cache_file, self._hand_params)
-        self._fingertip_symmetries = self._prepare_symmetries()
+        # joint limits for hand
+        self._limits = list(self._or_hand.GetDOFLimits())
+        # stores a dictionary mapping fingertip link name to a tuple (contact_tf, links, joints, open_dir, dof_indices)
+        self._finger_infos = {}
+        self._code_position_weight = None  # weight for positions relative to normals
+        self._other_link_names = []  # name of links that aren't fingertips
+        self._fingertip_symmetries = None
+        self._load_config(hand_config_file)  # initialize all the above
+        self._hand_mani = ReachabilityKDTree(self, cache_file, self._code_position_weight, self.get_contact_number())
 
-    def __getattr__(self, attr): # composition, gets called when this class doesn't have attr.
+    def __getattr__(self, attr):  # composition, gets called when this class doesn't have attr.
         return getattr(self._or_hand, attr)  # in this case forward it to the OpenRAVE robot
 
-    def _prepare_symmetries(self):
+    def _prepare_symmetries(self, symmetries_desc):
         """
             Prepares a list of tuples (i, j), where each tuple means that it
             makes sense for a given contact tuple to switch contact assignment for fingertip i and j,
@@ -61,60 +76,71 @@ class RobotHand(object):
             can be reached. The list is given by the user in the hand parameters.
         """
         symmetries = []
-        if SYMMETRIES_KEY not in self._hand_params:
+        if len(symmetries_desc) == 0:
             return symmetries
         link_names = self.get_fingertip_links()
         name_to_idx = dict(zip(link_names, range(len(link_names))))
-        symmetries = [(name_to_idx[link_1], name_to_idx[link_2]) for (link_1, link_2) in self._hand_params[SYMMETRIES_KEY]]
+        symmetries = [(name_to_idx[link_1], name_to_idx[link_2])
+                      for (link_1, link_2) in symmetries_desc]
         return symmetries
 
     def _load_config(self, config_file_name):
         """
-            Loads the given configuration file and returns the stored dictionary
+            Loads the hand configuration from file and initializes:
+                self._finger_infos
+                self._fingertip_symmetries
+                self._code_position_weight
+                self._other_link_names
         """
         with open(config_file_name, 'r') as afile:
-            # TODO we could do some sanity checking here on whether we have all required parameters
             file_content = yaml.load(afile)
             if not isinstance(file_content, dict):
-                raise ValueError('The hand configuration file needs to contain a dictionary mapping parameter names to values')
-            if OTHER_LINK_NAMES_KEY not in file_content:
-                all_link_names = [link.GetName() for link in self._or_hand.GetLinks()]
-                file_content[OTHER_LINK_NAMES_KEY] = [link_name for link_name in all_link_names if link_name not in file_content[FINGERTIP_LINK_NAMES_KEY]]
-            file_content[OPEN_HAND_DIR_KEY] = np.array(file_content[OPEN_HAND_DIR_KEY])
-            return file_content
-
-    def _get_limits(self):
-        """
-            Returns the joint limits of the hand that are useful for grasping.
-        """
-        limits = list(self._or_hand.GetDOFLimits())
-        if UPPER_LIMIT_KEY in self._hand_params:
-            limits[1] = np.array(self._hand_params[UPPER_LIMIT_KEY])
-        if LOWER_LIMIT_KEY in self._hand_params:
-            limits[0] = np.array(self._hand_params[LOWER_LIMIT_KEY])
-        return limits
+                raise ValueError(
+                    'The hand configuration file needs to contain a dictionary mapping parameter names to values')
+            if 'finger_information' not in file_content:
+                raise ValueError("No finger information found in %s " % config_file_name)
+            self._code_position_weight = file_content['code_position_weight']
+            # extract finger information for each finger
+            yaml_finger_infos = file_content['finger_information']
+            base_link = self._or_hand.GetLinks()[0]
+            for yaml_finger_info in yaml_finger_infos:
+                fingertip_name = yaml_finger_info['tip_link']
+                fingertip_link = self._or_hand.GetLink(fingertip_name)
+                finger_links = self._or_hand.GetChain(base_link.GetIndex(), fingertip_link.GetIndex(), False)
+                finger_joints = self._or_hand.GetChain(base_link.GetIndex(), fingertip_link.GetIndex(), True)
+                open_dir = np.array([yaml_finger_info['open_dir']])
+                contact_tf = transformations.compose_matrix(translate=yaml_finger_info['contact_pt']['position'],
+                                                            angles=yaml_finger_info['contact_pt']['orientation'])
+                dof_indices = []
+                for joint in finger_joints:
+                    if joint.IsMimic():
+                        mindices = joint.GetMimicDOFIndices()
+                        for midx in mindices:
+                            if midx not in dof_indices:
+                                dof_indices.append(midx)
+                    elif not joint.IsStatic():
+                        dof_indices.append(joint.GetDOFIndex())
+                self._finger_infos[fingertip_name] = (
+                    contact_tf, finger_links, finger_joints, open_dir, np.array(dof_indices))
+            # save also names of other fingers
+            all_link_names = [link.GetName() for link in self._or_hand.GetLinks()]
+            self._other_link_names = [ln for ln in all_link_names if ln not in self._finger_infos]
+            # load limits if available
+            if 'upper_limit' in file_content:
+                self._limits[1] = np.array(file_content['upper_limit'])
+            if 'lower_limit' in file_content:
+                self._limits[0] = np.array(file_content['lower_limit'])
+            # init symmetries
+            if 'symmetries' in file_content:
+                self._fingertip_symmetries = self._prepare_symmetries(file_content['symmetries'])
+            else:
+                self._fingertip_symmetries = []
 
     def GetDOFLimits(self):
         """
             Returns the limits for this hand as they are useful for grasping
         """
         return self._limits
-
-    def _compute_fn_transforms(self):
-        """
-            Computes fingertip transforms w.r.t to link frames from parameters and returns these.
-        """
-        fingertip_link_names = self._hand_params[FINGERTIP_LINK_NAMES_KEY]
-        fingertip_tf_params = self._hand_params[FINGERTIP_TRANSFORMS_KEY]
-        num_fn = self._hand_params[NUM_FINGERTIPS_KEY]
-        assert len(fingertip_link_names) == num_fn
-        assert len(fingertip_tf_params) == num_fn
-        fn_transforms = np.zeros((num_fn, 4, 4))
-        for fn in range(num_fn):
-            link = self._or_hand.GetLink(fingertip_link_names[fn])
-            fn_transforms[fn] = transformations.compose_matrix(translate=fingertip_tf_params[fn][POSITION_KEY],
-                                                               angles=fingertip_tf_params[fn][ORIENTATION_KEY])
-        return fn_transforms
 
     def get_hand_manifold(self):
         """
@@ -127,23 +153,21 @@ class RobotHand(object):
             Render the contact points for this hand.
         """
         self._plot_handles = []
-        tip_link_ids = self._hand_params[FINGERTIP_LINK_NAMES_KEY]
-        for fn in range(self._hand_params[NUM_FINGERTIPS_KEY]):
-            link = self._or_hand.GetLink(tip_link_ids[fn])
+        for tip_name, finger_info in self._finger_infos.iteritems():
+            link = self._or_hand.GetLink(tip_name)
             link_tf = link.GetGlobalMassFrame()
-            fn_pose = np.dot(link_tf, self._fingertip_tfs[fn])
+            fn_pose = np.dot(link_tf, finger_info[TF_KEY])
             self._plot_handles.append(DrawAxes(self._or_env, fn_pose, dist=0.03, linewidth=1.0))
 
     def get_tip_transforms(self):
         """
             Returns global transforms for each fingertip
         """
-        tip_link_ids = self._hand_params[FINGERTIP_LINK_NAMES_KEY]
         ret = []
-        for fn in range(self._hand_params[NUM_FINGERTIPS_KEY]):
-            link = self._or_hand.GetLink(tip_link_ids[fn])
+        for tip_name, finger_info in self._finger_infos.iteritems():
+            link = self._or_hand.GetLink(tip_name)
             link_tf = link.GetGlobalMassFrame()
-            fn_pose = np.dot(link_tf, self._fingertip_tfs[fn])
+            fn_pose = np.dot(link_tf, finger_info[TF_KEY])
             ret.append(fn_pose)
         return ret
 
@@ -151,13 +175,13 @@ class RobotHand(object):
         """
             Returns a list of fingertip link names.
         """
-        return self._hand_params[FINGERTIP_LINK_NAMES_KEY]
+        return self._finger_infos.keys()
 
     def get_non_fingertip_links(self):
         """
             Returns a list of non-fingertip link names.
         """
-        return self._hand_params[OTHER_LINK_NAMES_KEY]
+        return self._other_link_names
 
     def get_tip_pn(self):
         """
@@ -200,7 +224,7 @@ class RobotHand(object):
         """
             Returns the number of fingertips of this hand
         """
-        return self._hand_params[NUM_FINGERTIPS_KEY]
+        return len(self._finger_infos)
 
     def hand_obj_transform(self, hand_points, obj_points):
         """
@@ -234,7 +258,7 @@ class RobotHand(object):
             to points[0, :], the y axis is chosen accordingly.
         """
         # TODO this is a special case for 3 fingertips
-        assert(self._hand_params[NUM_FINGERTIPS_KEY] == 3)
+        assert(len(self._finger_infos) == 3)
         ori = np.sum(points, axis=0) / 3.0
         x = points[0, :] - ori
         x = x / np.linalg.norm(x)
@@ -258,33 +282,48 @@ class RobotHand(object):
         # TODO replacing this with a gradient descent of obstacle penetration cost would probably be much better
         # first try to move hand out of collision
         n_step /= 2
-        open_succes = self.avoid_collision_at_fingers(n_step)
-        if not open_succes:
+        open_success = self.avoid_collision_at_fingers(n_step)
+        if not open_success:
             return False, False
+        bcontact_success = True
+        for fn in self.get_fingertip_links():
+            bcontact_success = bcontact_success and self.move_fingertip_to_contact(fn, n_step)
+        return open_success, bcontact_success
+
         # if this worked, close the hand again until all fingers ar in contact
-        num_dofs = self._or_hand.GetDOF()
-        curr_conf = self.GetDOFValues()
-        close_dir = -self._hand_params[OPEN_HAND_DIR_KEY]
-        dir_to_max = self._limits[1] - curr_conf
-        dir_to_min = self._limits[0] - curr_conf
-        # Compute how much we can move along close_dir until we reach a limit in any DOF
-        distances_to_max = [dir_to_max[i] / close_dir[i] for i in range(num_dofs) if close_dir[i] > 0.0]
-        scale_range_max = min(distances_to_max) if distances_to_max else float('inf')
-        distances_to_min = [dir_to_min[i] / close_dir[i] for i in range(num_dofs) if close_dir[i] < 0.0]
-        scale_range_min = min(distances_to_min) if distances_to_min else float('inf')
-        # although both scale_range_max and scale_range_min should always be >= 0,
-        # it can happen due to numerical noise that one is negative if we are at a limit
-        scale_range = min(max(scale_range_max, 0), max(scale_range_min, 0))
-        assert(scale_range >= 0.0)
-        step = scale_range / n_step
-        if step < NUMERICAL_EPSILON:  # if we are already at a limit this might become very small
-            return open_succes, self.are_fingertips_in_contact()
-        for i in range(n_step):
-            curr_conf += step * close_dir
-            self.SetDOFValues(curr_conf)
-            if self.are_fingertips_in_contact():
-                return open_succes, True
-        return open_succes, False
+        # num_dofs = self._or_hand.GetDOF()
+        # curr_conf = self.GetDOFValues()
+        # close_dir = -self._hand_params[OPEN_HAND_DIR_KEY]
+        # dir_to_max = self._limits[1] - curr_conf
+        # dir_to_min = self._limits[0] - curr_conf
+        # # Compute how much we can move along close_dir until we reach a limit in any DOF
+        # distances_to_max = [dir_to_max[i] / close_dir[i] for i in range(num_dofs) if close_dir[i] > 0.0]
+        # scale_range_max = min(distances_to_max) if distances_to_max else float('inf')
+        # distances_to_min = [dir_to_min[i] / close_dir[i] for i in range(num_dofs) if close_dir[i] < 0.0]
+        # scale_range_min = min(distances_to_min) if distances_to_min else float('inf')
+        # # although both scale_range_max and scale_range_min should always be >= 0,
+        # # it can happen due to numerical noise that one is negative if we are at a limit
+        # scale_range = min(max(scale_range_max, 0), max(scale_range_min, 0))
+        # assert(scale_range >= 0.0)
+        # step = scale_range / n_step
+        # if step < NUMERICAL_EPSILON:  # if we are already at a limit this might become very small
+        #     return open_succes, self.are_fingertips_in_contact()
+        # for i in range(n_step):
+        #     curr_conf += step * close_dir
+        #     self.SetDOFValues(curr_conf)
+        #     if self.are_fingertips_in_contact():
+        #         return open_succes, True
+        # return open_succes, False
+
+    def finger_in_collision(self, tip_name):
+        """
+            Returns whether the finger with given tip link is in collision.
+        """
+        links = self._finger_infos[tip_name][LINKS_KEY]
+        for link in links:
+            if self._or_env.CheckCollision(link):
+                return True
+        return False
 
     def are_fingertips_in_contact(self):
         """
@@ -296,52 +335,123 @@ class RobotHand(object):
                 return False
         return True
 
+    def move_fingertip_to_contact(self, tip_name, n_step):
+        """ 
+            Closes the finger with the given tip name until it touches an object or reaches its limits.
+            :tip_name - name of the tip
+            :n_step - number of steps
+            Returns True if success, else False
+        """
+        if n_step <= 0:
+            n_step = 1
+        curr_conf = self.GetDOFValues()
+        close_dir = np.zeros(self._or_hand.GetDOF())
+        finger_indices = self._finger_infos[tip_name][DOF_INDICES_KEY]
+        close_dir[finger_indices] = -self._finger_infos[tip_name][OPEN_DIR_KEY]
+        moving_indices = np.nonzero(close_dir)[0]
+        dof_limits = self._or_hand.GetDOFLimits()
+        tip_link = self._or_hand.GetLink(tip_name)
+        # compute step size
+        step_size = _compute_step_size(dof_limits, curr_conf, close_dir, n_step)
+        if step_size < NUMERICAL_EPSILON:
+            return self._or_env.CheckCollision(tip_link)
+        # compute distance to limits
+        dist_lower_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[0][moving_indices], ord=1)
+        dist_upper_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[1][moving_indices], ord=1)
+        # close finger
+        while not self._or_env.CheckCollision(tip_link) and dist_lower_limit > 0.0 and dist_upper_limit > 0.0:
+            curr_conf += step_size * close_dir
+            curr_conf = np.clip(curr_conf, dof_limits[0], dof_limits[1])
+            self._or_hand.SetDOFValues(curr_conf)
+            dist_lower_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[0][moving_indices], ord=1)
+            dist_upper_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[1][moving_indices], ord=1)
+        return self._or_env.CheckCollision(tip_link)
+
+    def avoid_collision_at_finger(self, tip_name, n_step):
+        """
+            Opens the finger with the given tip name until it is no longer in collision or
+            reaching its maximum opening configuration.
+            :tip_name - name of tip to open
+            :n_step - number of steps
+            Returns True if success, else false
+        """
+        if n_step <= 0:
+            n_step = 1
+        curr_conf = self.GetDOFValues()
+        open_dir = np.zeros(self._or_hand.GetDOF())
+        finger_indices = self._finger_infos[tip_name][DOF_INDICES_KEY]
+        open_dir[finger_indices] = self._finger_infos[tip_name][OPEN_DIR_KEY]
+        moving_indices = np.nonzero(open_dir)[0]
+        dof_limits = self._or_hand.GetDOFLimits()
+        step_size = _compute_step_size(dof_limits, curr_conf, open_dir, n_step)
+        if step_size < NUMERICAL_EPSILON:
+            return self.finger_in_collision(tip_name)
+        # compute distance to limits
+        dist_lower_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[0][moving_indices], ord=1)
+        dist_upper_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[1][moving_indices], ord=1)
+        # open finger
+        while self.finger_in_collision(tip_name) and dist_lower_limit > 0.0 and dist_upper_limit > 0.0:
+            curr_conf += step_size * open_dir
+            curr_conf = np.clip(curr_conf, dof_limits[0], dof_limits[1])
+            self._or_hand.SetDOFValues(curr_conf)
+            dist_lower_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[0][moving_indices], ord=1)
+            dist_upper_limit = np.linalg.norm(curr_conf[moving_indices] - dof_limits[1][moving_indices], ord=1)
+        return not self.finger_in_collision(tip_name)
+
     def avoid_collision_at_fingers(self, n_step):
         """
             Opens the hand until there is no collision anymore.
             :param n_step - maximum number of sampling steps
             :return True if successful, False otherwise
         """
-        if n_step <= 0:
-            n_step = 1
-        num_dofs = self._or_hand.GetDOF()
-        curr_conf = self.GetDOFValues()
-        open_dir = self._hand_params[OPEN_HAND_DIR_KEY]
-        dir_to_max = self._limits[1] - curr_conf
-        dir_to_min = self._limits[0] - curr_conf
-        # Compute how much we can move along close_dir until we reach a limit in any DOF
-        distances_to_max = [dir_to_max[i] / open_dir[i] for i in range(num_dofs) if open_dir[i] > 0.0]
-        scale_range_max = min(distances_to_max) if distances_to_max else float('inf')
-        distances_to_min = [dir_to_min[i] / open_dir[i] for i in range(num_dofs) if open_dir[i] < 0.0]
-        scale_range_min = min(distances_to_min) if distances_to_min else float('inf')
-        # although both scale_range_max and scale_range_min should always be >= 0,
-        # it can happen due to numerical noise that one is negative if we are at a limit
-        scale_range = min(max(scale_range_max, 0), max(scale_range_min, 0))
-        assert(scale_range >= 0.0)
-        step = scale_range / n_step
-        if step < NUMERICAL_EPSILON:  # if we are already at a limit this might become very small
-            return not self._or_env.CheckCollision(self._or_hand)
-        for i in range(n_step):
-            if not self._or_env.CheckCollision(self._or_hand):
-                return True
-            curr_conf += step * open_dir
-            self.SetDOFValues(curr_conf)
-        return self._or_env.CheckCollision(self._or_hand)
+        bsuccess = True
+        for fn in self.get_fingertip_links():
+            bsuccess = bsuccess and self.avoid_collision_at_finger(fn, n_step)
+        return bsuccess
+        # if n_step <= 0:
+        #     n_step = 1
+        # num_dofs = self._or_hand.GetDOF()
+        # curr_conf = self.GetDOFValues()
+        # open_dir = self._hand_params[OPEN_HAND_DIR_KEY]
+        # dir_to_max = self._limits[1] - curr_conf
+        # dir_to_min = self._limits[0] - curr_conf
+        # # Compute how much we can move along close_dir until we reach a limit in any DOF
+        # distances_to_max = [dir_to_max[i] / open_dir[i] for i in range(num_dofs) if open_dir[i] > 0.0]
+        # scale_range_max = min(distances_to_max) if distances_to_max else float('inf')
+        # distances_to_min = [dir_to_min[i] / open_dir[i] for i in range(num_dofs) if open_dir[i] < 0.0]
+        # scale_range_min = min(distances_to_min) if distances_to_min else float('inf')
+        # # although both scale_range_max and scale_range_min should always be >= 0,
+        # # it can happen due to numerical noise that one is negative if we are at a limit
+        # scale_range = min(max(scale_range_max, 0), max(scale_range_min, 0))
+        # assert(scale_range >= 0.0)
+        # step = scale_range / n_step
+        # if step < NUMERICAL_EPSILON:  # if we are already at a limit this might become very small
+        #     return not self._or_env.CheckCollision(self._or_hand)
+        # for i in range(n_step):
+        #     if not self._or_env.CheckCollision(self._or_hand):
+        #         return True
+        #     curr_conf += step * open_dir
+        #     self.SetDOFValues(curr_conf)
+        # return self._or_env.CheckCollision(self._or_hand)
 
     def get_fingertip_symmetries(self):
         return self._fingertip_symmetries
 
 # TODO maybe define an interface with the methods the grasp planner needs this to have
+
+
 class ReachabilityKDTree(object):
     """
         KD tree based hand manifold for a robot hand
     """
-    def __init__(self, or_robot, cache_file_name, hand_params, num_samples=1000000):
+
+    def __init__(self, or_robot, cache_file_name, cpw, num_fingers, num_samples=1000000):
         """
             Creates a new KD-tree based hand manifold for a robot hand.
             :or_robot: - openrave robot, iu.e. the hand
             :cache_file_name: - filename where to save data
-            :hand_params: a dictionary of parameters with the keys the top of this file
+            :cpw - weight for positions in distance computation of codes
+            :num_fingers - number of fingers
             :num_samples: number of samples
         """
         self._or_robot = or_robot
@@ -350,15 +460,16 @@ class ReachabilityKDTree(object):
         self._min_code = None
         self._max_code = None
         self._hand_configurations = None
+        self._code_position_weight = cpw
+        self._num_fingers = num_fingers
         self._kd_tree = None
-        self._hand_params = hand_params
         self._num_samples = num_samples
 
     def set_parameters(self, **kwargs):
         if 'num_samples' in kwargs:
             self._num_samples = kwargs['num_samples']
         if 'code_position_weight' in kwargs:
-            self._hand_params[CODE_POSITION_WEIGHT_KEY] = kwargs['code_position_weight']
+            self._code_position_weight = kwargs['code_position_weight']
 
     def load(self):
         if os.path.exists(self._cache_file_name):
@@ -366,7 +477,7 @@ class ReachabilityKDTree(object):
             stored_data = np.load(self._cache_file_name)
             meta_data = stored_data[0]
             data = stored_data[1]
-            code_dimension = 2 * self._hand_params[NUM_FINGERTIPS_KEY]
+            code_dimension = 2 * self._num_fingers
             self._codes = data[:, : code_dimension]
             self._hand_configurations = data[:, code_dimension:]
             self._min_code = meta_data[0]
@@ -377,6 +488,9 @@ class ReachabilityKDTree(object):
             data = np.concatenate((self._codes, self._hand_configurations), axis=1)
             meta_data = np.array([self._min_code, self._max_code])
             store_data = np.array([meta_data, data], dtype=object)
+            directory = os.path.dirname(self._cache_file_name)
+            if not os.path.exists(directory):
+                os.makedirs(directory)
             np.save(self._cache_file_name, store_data)
         self._kd_tree = KDTree(self._codes)
 
@@ -400,8 +514,9 @@ class ReachabilityKDTree(object):
             self._hand_configurations = np.array(np.meshgrid(*sample_values)).T.reshape((actual_num_samples, num_dofs))
         else:
             random_data = np.random.rand(self._num_samples, num_dofs)
-            self._hand_configurations = np.apply_along_axis(lambda row: lower_limits + row * joint_ranges, 1, random_data)
-        self._codes = np.zeros((actual_num_samples, 2 * self._hand_params[NUM_FINGERTIPS_KEY]))
+            self._hand_configurations = np.apply_along_axis(
+                lambda row: lower_limits + row * joint_ranges, 1, random_data)
+        self._codes = np.zeros((actual_num_samples, 2 * self._num_fingers))
         logging.info('[ReachabilityKDTree::Evaluating %i hand configurations.' % actual_num_samples)
         # now compute codes for all configurations
         with self._or_robot.GetEnv():
@@ -449,7 +564,7 @@ class ReachabilityKDTree(object):
         """
         position_diff = np.linalg.norm(contact_0[:3] - contact_1[:3])
         normal_diff = np.linalg.norm(contact_0[3:] - contact_1[3:])
-        return np.array([position_diff * self._hand_params[CODE_POSITION_WEIGHT_KEY], normal_diff])
+        return np.array([position_diff * self._code_position_weight, normal_diff])
 
     def predict_hand_conf(self, code):
         distance, index = self._kd_tree.query(code)

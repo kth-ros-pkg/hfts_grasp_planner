@@ -1,0 +1,4 @@
+visualize: True
+hand_cache_file: data/cache/barrett.npy
+hand_file: /models/barrett/barretthand.robot.xml
+hand_config_file: /models/barrett/hand_config.yaml

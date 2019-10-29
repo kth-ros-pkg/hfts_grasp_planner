@@ -1,0 +1,21 @@
+finger_information:
+  - tip_link: 'Finger0-2'
+    contact_pt:
+      position: [0.01, 0.01, 0.0] 
+      orientation: [-1.57, 0.0, 0.0]
+    open_dir: [0.0, -1.0]
+  - tip_link: 'Finger1-2'
+    contact_pt:
+      position: [0.01, 0.01, 0.0]
+      orientation: [-1.57, 0.0, 0.0]
+    open_dir: [0.0, -1.0]
+  - tip_link: 'Finger2-2'
+    contact_pt:
+      position: [0.01, 0.01, 0.0]
+      orientation: [-1.57, 0.01, 0.0]
+    open_dir: [-1.0]
+open_hand_config: [0.0, 0.0, 0.0, 0.0]
+symmetries:
+  - ['Finger0-2', 'Finger1-2']
+code_position_weight: 5.0
+upper_limit: [0.99756358, 0.97930328, 0.98726626, 1.5357]

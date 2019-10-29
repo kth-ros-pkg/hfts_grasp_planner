@@ -70,7 +70,7 @@ def create_contact_points_from_stl(file_name, density=300):
             stl_mesh.update_normals()
             normal_length = np.linalg.norm(stl_mesh.normals[face_idx])
             if normal_length == 0.0:
-                raise IOError('[hfts_generation.py::create_contact_points_from_stl] Could not extract valid normals from the given file ' \
+                raise IOError('[hfts_generation.py::create_contact_points_from_stl] Could not extract valid normals from the given file '
                               + str(file_name))
         points_on_face = sample_face(stl_mesh.v0[face_idx], stl_mesh.v1[face_idx], stl_mesh.v2[face_idx],
                                      stl_mesh.normals[face_idx], density=density)
@@ -105,12 +105,11 @@ def filter_unsmooth_points(points, radius, max_variance):
     start_time = time.time()
     kdt = sklearn.neighbors.KDTree(points[:, :3], leaf_size=6, metric='euclidean')
     vld_idx = np.ones(points.shape[0], dtype=bool)
+    nbs_indices = kdt.query_radius(points[:, :3], radius)
     for i in range(len(points)):
-        point = points[i]
-        nbs_indices = kdt.query_radius(point[:3], radius)[0]
-        if len(nbs_indices) == 0:
+        if len(nbs_indices[i]) == 0:
             continue
-        nb_points_normals = points[nbs_indices, 3:]
+        nb_points_normals = points[nbs_indices[i], 3:]
         var = np.var(nb_points_normals, axis=0)
         if max(var) > max_variance:
             vld_idx[i] = False
@@ -293,7 +292,8 @@ def or_render_points(or_env_drawer, contact_points, transform=None, b_normals=Fa
         transform = np.eye(4, 4)
     for contact in contact_points:
         position = np.dot(transform, np.concatenate((contact[:3], [1])))[:3]
-        or_env_drawer.draw_bounding_box(abb=None, color=color, position=position, extents=[size/2.0, size/2.0, size/2.0])
+        or_env_drawer.draw_bounding_box(abb=None, color=color, position=position,
+                                        extents=[size/2.0, size/2.0, size/2.0])
         if b_normals:
             normal = np.dot(transform[:3, :3], contact[3:])
             arrow_length = 3 * size
